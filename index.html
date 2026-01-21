@@ -96,15 +96,26 @@
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%,
+            100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
         }
         .fade-in {
             animation: fadeIn 0.3s ease-out;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         /* カスタムスクロールバー */
         ::-webkit-scrollbar {
@@ -137,12 +148,14 @@
             TIME_RANGE: { start: 6, end: 23, step: 30 },
             STORAGE_KEY: 'familyCalendarConfig',
             MEMBER_COLORS: {
-                papa: { name: 'パパ', color: '#3b82f6', bg: 'bg-blue-500', light: 'bg-blue-100', border: 'border-blue-300' },
-                mama: { name: 'ママ', color: '#ec4899', bg: 'bg-pink-500', light: 'bg-pink-100', border: 'border-pink-300' },
-                child1: { name: '子ども1', color: '#22c55e', bg: 'bg-green-500', light: 'bg-green-100', border: 'border-green-300' },
-                child2: { name: '子ども2', color: '#f59e0b', bg: 'bg-amber-500', light: 'bg-amber-100', border: 'border-amber-300' },
-                child3: { name: '子ども3', color: '#8b5cf6', bg: 'bg-violet-500', light: 'bg-violet-100', border: 'border-violet-300' },
-                family: { name: '家族全員', color: '#6366f1', bg: 'bg-indigo-500', light: 'bg-indigo-100', border: 'border-indigo-300' }
+                yuta: { name: 'ゆた', color: '#00bfff' },
+                yoyo: { name: 'よーよー', color: '#ff4500' },
+                mahiru: { name: 'まひる', color: '#9932cc' },
+                ayuha: { name: 'あゆは', color: '#ffd700' },
+                family: { name: '家族全員', color: '#fa8072' },
+                staygold: { name: 'STAY GOLD', color: '#000080' },
+                yoyoenglish: { name: 'YOYO ENGLISH', color: '#ffa500' },
+                church: { name: '教会', color: '#66cdaa' }
             }
         };
         // ============================================================
@@ -210,7 +223,11 @@
                 return days;
             },
             getMemberStyle(memberId) {
-                return Config.MEMBER_COLORS[memberId] || Config.MEMBER_COLORS.family;
+                const member = Config.MEMBER_COLORS[memberId];
+                if (member) {
+                    return { color: member.color, name: member.name };
+                }
+                return { color: '#fa8072', name: '家族全員' };
             }
         };
         // ============================================================
@@ -369,9 +386,11 @@
             },
             eventForm(event = null, date = '') {
                 const isEdit = !!event;
-                const e = event || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', memo: '', isAllDay: false };
+                const e = event || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', memo: '', isAllDay: false, startDate: '', endDate: '' };
                 const formDate = event ? event.date : date;
                 const formId = event ? event.id : 'null';
+                const startDate = e.startDate || formDate;
+                const endDate = e.endDate || formDate;
                 return `
                 <form id="eventForm" onsubmit="App.saveEvent(event, ${isEdit ? `'${formId}'` : 'null'}, '${formDate}')">
                     <div class="space-y-4">
@@ -386,8 +405,20 @@
                         </div>
                         <div class="flex items-center gap-2 py-2">
                             <input type="checkbox" name="isAllDay" id="isAllDay${isEdit ? 'Edit' : ''}" ${e.isAllDay ? 'checked' : ''} 
-                                onchange="document.getElementById('timeInputs${isEdit ? 'Edit' : ''}').style.display = this.checked ? 'none' : 'grid'">
+                                onchange="App.toggleAllDay(this, ${isEdit ? 'true' : 'false'})">
                             <label for="isAllDay${isEdit ? 'Edit' : ''}" class="text-sm text-slate-700">終日の予定</label>
+                        </div>
+                        <div id="dateInputs${isEdit ? 'Edit' : ''}" class="grid grid-cols-2 gap-4" style="${e.isAllDay ? '' : 'display: none'}">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">開始日</label>
+                                <input type="date" name="startDate" value="${startDate}" 
+                                    class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">終了日</label>
+                                <input type="date" name="endDate" value="${endDate}" 
+                                    class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            </div>
                         </div>
                         <div id="timeInputs${isEdit ? 'Edit' : ''}" class="grid grid-cols-2 gap-4" style="${e.isAllDay ? 'display: none' : ''}">
                             <div>
@@ -559,25 +590,82 @@
         // UIRenderer Module - UI描画
         // ============================================================
         const UIRenderer = {
+            // 複数日予定がこの日に表示されるかチェック
+            getMultiDayEventsForDate(events, dateStr) {
+                return events.filter(e => {
+                    if (!e.isAllDay || !e.startDate || !e.endDate) return false;
+                    return dateStr >= e.startDate && dateStr <= e.endDate;
+                });
+            },
+            // この日が予定期間のどの位置かを判定（start/middle/end/single）
+            getMultiDayPosition(event, dateStr) {
+                if (!event.startDate || !event.endDate) return 'single';
+                if (event.startDate === event.endDate) return 'single';
+                if (dateStr === event.startDate) return 'start';
+                if (dateStr === event.endDate) return 'end';
+                return 'middle';
+            },
             buildCalendarCell(d, events, today) {
                 const dateStr = Utils.formatDate(d.date);
-                const dayEvents = events.filter(e => e.date === dateStr).sort((a, b) => {
-                    if (a.isAllDay && !b.isAllDay) return -1;
-                    if (!a.isAllDay && b.isAllDay) return 1;
-                    return (a.startTime || '').localeCompare(b.startTime || '');
-                });
+                // 終日予定（複数日対応）
+                const multiDayEvents = this.getMultiDayEventsForDate(events, dateStr);
+                // 単一日の終日予定（startDate/endDateがない古いデータまたは同日の予定）
+                const singleDayAllDayEvents = events.filter(e =>
+                    e.date === dateStr && e.isAllDay && (!e.startDate || !e.endDate || e.startDate === e.endDate)
+                );
+                // 時間指定の予定
+                const timedEvents = events.filter(e => e.date === dateStr && !e.isAllDay)
+                    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
                 const isToday = dateStr === today;
                 const isHoliday = Utils.getHoliday(dateStr);
                 const isSunday = d.date.getDay() === 0;
                 const isSaturday = d.date.getDay() === 6;
-                const eventsHtml = dayEvents.map(e => {
+                // 複数日予定の表示（帯状）
+                const multiDayHtml = multiDayEvents.map(e => {
                     const style = Utils.getMemberStyle(e.memberId);
-                    const timeStr = e.isAllDay ? '終日' : e.startTime;
+                    const position = this.getMultiDayPosition(e, dateStr);
+                    let borderRadius = 'rounded';
+                    let marginLeft = '';
+                    let marginRight = '';
+                    if (position === 'start') {
+                        borderRadius = 'rounded-l';
+                        marginRight = 'mr-0';
+                    } else if (position === 'end') {
+                        borderRadius = 'rounded-r';
+                        marginLeft = 'ml-0';
+                    } else if (position === 'middle') {
+                        borderRadius = '';
+                        marginLeft = 'ml-0';
+                        marginRight = 'mr-0';
+                    }
+                    const showTitle = position === 'start' || position === 'single';
                     return `
-                    <div class="event-item p-1 rounded text-white ${style.bg}" 
+                    <div class="event-item p-1 ${borderRadius} text-white ${marginLeft} ${marginRight}" 
+                         style="background-color: ${style.color}; ${position === 'middle' || position === 'end' ? 'margin-left: -4px;' : ''} ${position === 'middle' || position === 'start' ? 'margin-right: -4px;' : ''}" 
                          data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
                          onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
-                        <span class="opacity-75">${timeStr}</span> ${e.title}
+                        ${showTitle ? e.title : '&nbsp;'}
+                    </div>`;
+                }).join('');
+                // 単一日の終日予定（帯状、タイトルのみ）
+                const singleAllDayHtml = singleDayAllDayEvents.map(e => {
+                    const style = Utils.getMemberStyle(e.memberId);
+                    return `
+                    <div class="event-item p-1 rounded text-white" style="background-color: ${style.color}" 
+                         data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
+                         onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
+                        ${e.title}
+                    </div>`;
+                }).join('');
+                // 時間指定の予定（色丸＋タイトル）
+                const timedHtml = timedEvents.map(e => {
+                    const style = Utils.getMemberStyle(e.memberId);
+                    return `
+                    <div class="event-item p-1 flex items-center gap-1" 
+                         data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
+                         onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
+                        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${style.color}"></span>
+                        <span class="text-slate-700 truncate">${e.title}</span>
                     </div>`;
                 }).join('');
                 return `
@@ -588,7 +676,7 @@
                         <span class="text-xs md:text-sm font-semibold ${isToday ? 'bg-primary-500 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''} ${isSunday || isHoliday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-slate-700'}">${d.date.getDate()}</span>
                         ${isHoliday ? `<span class="text-[8px] text-red-500 truncate hidden md:block">${isHoliday}</span>` : ''}
                     </div>
-                    <div class="space-y-1">${eventsHtml}</div>
+                    <div class="space-y-1">${multiDayHtml}${singleAllDayHtml}${timedHtml}</div>
                 </div>`;
             },
             calendar() {
@@ -626,8 +714,8 @@
                         <select id="filterSelect" onchange="App.setFilter(this.value)" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500">
                             <option value="all" ${s.filterMember === 'all' ? 'selected' : ''}>全員表示</option>
                             ${Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
-                                `<option value="${id}" ${s.filterMember === id ? 'selected' : ''}>${info.name}</option>`
-                            ).join('')}
+                    `<option value="${id}" ${s.filterMember === id ? 'selected' : ''}>${info.name}</option>`
+                ).join('')}
                         </select>
                         <button onclick="App.goToday()" class="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 transition">今日</button>
                         <button onclick="App.exportToGoogle()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm transition hidden md:block">📅 エクスポート</button>
@@ -645,8 +733,9 @@
                     const style = Utils.getMemberStyle(e.memberId);
                     const dateObj = new Date(e.date);
                     const dateStr = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                    const lightColor = style.color + '20';
                     return `
-                    <div class="p-2 rounded-lg ${style.light} ${style.border} border cursor-pointer hover:shadow-md transition" onclick="App.openEditEvent('${e.id}')">
+                    <div class="p-2 rounded-lg border cursor-pointer hover:shadow-md transition" style="background-color: ${lightColor}; border-color: ${style.color}" onclick="App.openEditEvent('${e.id}')">
                         <div class="flex items-center gap-2">
                             <span class="text-xs font-medium text-slate-600">${dateStr}</span>
                             <span class="text-xs ${e.isAllDay ? 'text-slate-500' : ''}">${e.isAllDay ? '終日' : e.startTime}</span>
@@ -657,7 +746,7 @@
                 // 凡例
                 const legendHtml = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
                     `<div class="flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full ${info.bg}"></span>
+                        <span class="w-3 h-3 rounded-full" style="background-color: ${info.color}"></span>
                         <span class="text-xs text-slate-600">${info.name}</span>
                     </div>`
                 ).join('');
@@ -849,14 +938,17 @@
             saveEvent(e, id, date) {
                 e.preventDefault();
                 const form = e.target;
+                const isAllDay = form.isAllDay.checked;
                 const data = {
                     id: id || Utils.generateId(),
-                    date,
+                    date: isAllDay ? form.startDate.value : date,
                     title: form.title.value,
                     memberId: form.memberId.value,
-                    isAllDay: form.isAllDay.checked,
-                    startTime: form.isAllDay.checked ? '' : form.startTime.value,
-                    endTime: form.isAllDay.checked ? '' : form.endTime.value,
+                    isAllDay: isAllDay,
+                    startTime: isAllDay ? '' : form.startTime.value,
+                    endTime: isAllDay ? '' : form.endTime.value,
+                    startDate: isAllDay ? form.startDate.value : '',
+                    endDate: isAllDay ? form.endDate.value : '',
                     memo: form.memo.value
                 };
                 if (id) StateManager.updateEvent(id, data);
@@ -873,10 +965,22 @@
                     this.render();
                 }
             },
-            autoEndTime(el) { 
+            autoEndTime(el) {
                 const form = el.closest('form');
                 if (form && form.endTime) {
-                    form.endTime.value = Utils.addHour(el.value); 
+                    form.endTime.value = Utils.addHour(el.value);
+                }
+            },
+            toggleAllDay(checkbox, isEdit) {
+                const suffix = isEdit ? 'Edit' : '';
+                const dateInputs = document.getElementById('dateInputs' + suffix);
+                const timeInputs = document.getElementById('timeInputs' + suffix);
+                if (checkbox.checked) {
+                    dateInputs.style.display = 'grid';
+                    timeInputs.style.display = 'none';
+                } else {
+                    dateInputs.style.display = 'none';
+                    timeInputs.style.display = 'grid';
                 }
             },
             // Members
