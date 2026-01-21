@@ -1,539 +1,971 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>家族カレンダー</title>
+    <meta name="description" content="家族みんなで予定を共有できるシンプルなカレンダーアプリ">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
-                        otou: { 100: '#dbeafe', 200: '#bfdbfe', 500: '#3b82f6', 600: '#2563eb' },
-                        mama: { 100: '#fce7f3', 200: '#fbcfe8', 500: '#ec4899', 600: '#db2777' },
-                        mahiru: { 100: '#fef3c7', 200: '#fde68a', 500: '#f59e0b', 600: '#d97706' },
-                        ayuha: { 100: '#d1fae5', 200: '#a7f3d0', 500: '#10b981', 600: '#059669' }
+                        primary: { 50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e' },
+                        member: {
+                            papa: '#3b82f6',
+                            mama: '#ec4899',
+                            child1: '#22c55e',
+                            child2: '#f59e0b',
+                            child3: '#8b5cf6',
+                            family: '#6366f1'
+                        }
                     }
                 }
             }
         }
     </script>
     <style>
-        .calendar-cell {
-            min-height: 80px;
+        * {
+            font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
         }
-
+        .calendar-cell {
+            min-height: 90px;
+        }
         @media (min-width: 768px) {
             .calendar-cell {
                 min-height: 120px;
             }
         }
-
         .event-item {
             cursor: pointer;
-            font-size: 9px;
-            line-height: 1.1;
+            font-size: 10px;
+            line-height: 1.2;
             word-break: break-all;
+            white-space: normal;
+            transition: transform 0.1s, box-shadow 0.1s;
         }
-
+        .event-item:hover {
+            transform: scale(1.02);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
         @media (min-width: 768px) {
             .event-item {
-                font-size: 11px;
-                line-height: 1.2;
+                font-size: 12px;
+                cursor: grab;
             }
+            .event-item:active {
+                cursor: grabbing;
+            }
+        }
+        .select-mode .calendar-cell {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .select-mode .calendar-cell:hover {
+            background-color: rgba(14, 165, 233, 0.15);
+        }
+        .copy-mode-banner {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #0ea5e9, #0284c7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4);
+        }
+        .drag-over {
+            background-color: rgba(14, 165, 233, 0.15) !important;
+        }
+        .member-card {
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .member-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .member-card:active {
+            cursor: grabbing;
+        }
+        .sync-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
     </style>
 </head>
-
-<body class="bg-primary-50 min-h-screen">
+<body class="bg-slate-50 min-h-screen">
     <div id="app"></div>
-
     <script>
         // ============================================================
-        // グローバル設定と状態
+        // Config Module - 設定・定数の一元管理
         // ============================================================
-        const CONFIG_KEY = 'familyCalendarConfig';
-        const EVENTS_KEY = 'familyCalendarEvents';
-        const API_URL = 'https://api.jsonbin.io/v3/b';
-
-        const CATEGORIES = [
-            { id: 'otou', name: 'おとうー', color: 'otou' },
-            { id: 'mama', name: 'まま', color: 'mama' },
-            { id: 'mahiru', name: 'まひる', color: 'mahiru' },
-            { id: 'ayuha', name: 'あゆは', color: 'ayuha' }
-        ];
-
-        let config = null;
-        let events = [];
-        let currentDate = new Date();
-        let filterCategory = null;
-        let syncStatus = '';
-
-        // ============================================================
-        // ローカルストレージ操作
-        // ============================================================
-        function loadFromLocal() {
-            try {
-                config = JSON.parse(localStorage.getItem(CONFIG_KEY));
-                const data = JSON.parse(localStorage.getItem(EVENTS_KEY));
-                if (data && data.events) events = data.events;
-            } catch (e) {
-                console.error('Load error:', e);
+        const Config = {
+            API_URL: 'https://api.jsonbin.io/v3/b',
+            SYNC_INTERVAL: 5000,
+            ADMIN_PASSWORD: '0927',
+            TIME_RANGE: { start: 6, end: 23, step: 30 },
+            STORAGE_KEY: 'familyCalendarConfig',
+            MEMBER_COLORS: {
+                papa: { name: 'パパ', color: '#3b82f6', bg: 'bg-blue-500', light: 'bg-blue-100', border: 'border-blue-300' },
+                mama: { name: 'ママ', color: '#ec4899', bg: 'bg-pink-500', light: 'bg-pink-100', border: 'border-pink-300' },
+                child1: { name: '子ども1', color: '#22c55e', bg: 'bg-green-500', light: 'bg-green-100', border: 'border-green-300' },
+                child2: { name: '子ども2', color: '#f59e0b', bg: 'bg-amber-500', light: 'bg-amber-100', border: 'border-amber-300' },
+                child3: { name: '子ども3', color: '#8b5cf6', bg: 'bg-violet-500', light: 'bg-violet-100', border: 'border-violet-300' },
+                family: { name: '家族全員', color: '#6366f1', bg: 'bg-indigo-500', light: 'bg-indigo-100', border: 'border-indigo-300' }
             }
-        }
-
-        function saveToLocal() {
-            localStorage.setItem(EVENTS_KEY, JSON.stringify({ events, savedAt: Date.now() }));
-        }
-
-        function saveConfig() {
-            localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-        }
-
+        };
         // ============================================================
-        // クラウドAPI（JSONBin.io）- Master Key専用
+        // Utils Module - ユーティリティ関数（キャッシュ付き）
         // ============================================================
-        async function cloudSave() {
-            if (!config) return false;
-            setSyncStatus('保存中...');
-            try {
-                const res = await fetch(`${API_URL}/${config.binId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Master-Key': config.apiKey
-                    },
-                    body: JSON.stringify({ events, updatedAt: Date.now() })
-                });
-
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.message || `HTTP ${res.status}`);
+        const Utils = {
+            formatDate: (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+            generateId: () => Date.now().toString(36) + Math.random().toString(36).substr(2),
+            addHour: (t) => {
+                const [h, m] = t.split(':').map(Number);
+                const newH = h + 1 > 23 ? 23 : h + 1;
+                return `${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            },
+            _timeOptionsCache: null,
+            getTimeOptions() {
+                if (!this._timeOptionsCache) {
+                    this._timeOptionsCache = [];
+                    for (let h = Config.TIME_RANGE.start; h <= Config.TIME_RANGE.end; h++) {
+                        for (let m = 0; m < 60; m += Config.TIME_RANGE.step) {
+                            this._timeOptionsCache.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+                        }
+                    }
                 }
-
-                setSyncStatus('保存完了 ✓');
-                console.log('Cloud save OK');
-                return true;
-            } catch (e) {
-                console.error('Cloud save error:', e);
-                setSyncStatus('保存エラー: ' + e.message);
-                alert('クラウド保存に失敗しました:\n' + e.message + '\n\nローカルには保存されています。');
-                return false;
+                return this._timeOptionsCache;
+            },
+            _holidayMap: null,
+            getHolidayMap() {
+                if (!this._holidayMap) {
+                    this._holidayMap = new Map([
+                        ['2024-01-01', '元日'], ['2024-01-08', '成人の日'], ['2024-02-11', '建国記念の日'], ['2024-02-12', '振替休日'],
+                        ['2024-02-23', '天皇誕生日'], ['2024-03-20', '春分の日'], ['2024-04-29', '昭和の日'], ['2024-05-03', '憲法記念日'],
+                        ['2024-05-04', 'みどりの日'], ['2024-05-05', 'こどもの日'], ['2024-05-06', '振替休日'], ['2024-07-15', '海の日'],
+                        ['2024-08-11', '山の日'], ['2024-08-12', '振替休日'], ['2024-09-16', '敬老の日'], ['2024-09-22', '秋分の日'],
+                        ['2024-09-23', '振替休日'], ['2024-10-14', 'スポーツの日'], ['2024-11-03', '文化の日'], ['2024-11-04', '振替休日'],
+                        ['2024-11-23', '勤労感謝の日'], ['2025-01-01', '元日'], ['2025-01-13', '成人の日'], ['2025-02-11', '建国記念の日'],
+                        ['2025-02-23', '天皇誕生日'], ['2025-02-24', '振替休日'], ['2025-03-20', '春分の日'], ['2025-04-29', '昭和の日'],
+                        ['2025-05-03', '憲法記念日'], ['2025-05-04', 'みどりの日'], ['2025-05-05', 'こどもの日'], ['2025-05-06', '振替休日'],
+                        ['2025-07-21', '海の日'], ['2025-08-11', '山の日'], ['2025-09-15', '敬老の日'], ['2025-09-23', '秋分の日'],
+                        ['2025-10-13', 'スポーツの日'], ['2025-11-03', '文化の日'], ['2025-11-23', '勤労感謝の日'], ['2025-11-24', '振替休日'],
+                        ['2026-01-01', '元日'], ['2026-01-12', '成人の日'], ['2026-02-11', '建国記念の日'], ['2026-02-23', '天皇誕生日'],
+                        ['2026-03-20', '春分の日'], ['2026-04-29', '昭和の日'], ['2026-05-03', '憲法記念日'], ['2026-05-04', 'みどりの日'],
+                        ['2026-05-05', 'こどもの日'], ['2026-05-06', '振替休日'], ['2026-07-20', '海の日'], ['2026-08-11', '山の日'],
+                        ['2026-09-21', '敬老の日'], ['2026-09-22', '国民の休日'], ['2026-09-23', '秋分の日'], ['2026-10-12', 'スポーツの日'],
+                        ['2026-11-03', '文化の日'], ['2026-11-23', '勤労感謝の日'], ['2027-01-01', '元日'], ['2027-01-11', '成人の日'],
+                        ['2027-02-11', '建国記念の日'], ['2027-02-23', '天皇誕生日'], ['2027-03-21', '春分の日'], ['2027-03-22', '振替休日'],
+                        ['2027-04-29', '昭和の日'], ['2027-05-03', '憲法記念日'], ['2027-05-04', 'みどりの日'], ['2027-05-05', 'こどもの日'],
+                        ['2027-07-19', '海の日'], ['2027-08-11', '山の日'], ['2027-09-20', '敬老の日'], ['2027-09-23', '秋分の日'],
+                        ['2027-10-11', 'スポーツの日'], ['2027-11-03', '文化の日'], ['2027-11-23', '勤労感謝の日']
+                    ]);
+                }
+                return this._holidayMap;
+            },
+            getHoliday(dateStr) {
+                return this.getHolidayMap().get(dateStr);
+            },
+            getCalendarDays(year, month) {
+                const first = new Date(year, month, 1);
+                const last = new Date(year, month + 1, 0);
+                const days = [];
+                const startDay = first.getDay();
+                for (let i = startDay - 1; i >= 0; i--) days.push({ date: new Date(year, month, -i), current: false });
+                for (let i = 1; i <= last.getDate(); i++) days.push({ date: new Date(year, month, i), current: true });
+                const remaining = 42 - days.length;
+                for (let i = 1; i <= remaining; i++) days.push({ date: new Date(year, month + 1, i), current: false });
+                return days;
+            },
+            getMemberStyle(memberId) {
+                return Config.MEMBER_COLORS[memberId] || Config.MEMBER_COLORS.family;
             }
-        }
-
-        async function cloudLoad() {
-            if (!config) return false;
-            setSyncStatus('読込中...');
-            try {
-                const res = await fetch(`${API_URL}/${config.binId}/latest`, {
+        };
+        // ============================================================
+        // StateManager Module - 状態管理
+        // ============================================================
+        const StateManager = {
+            state: {
+                isAdmin: false,
+                currentDate: new Date(),
+                events: [],
+                members: [],
+                filterMember: 'all',
+                dragData: null,
+                showSidebar: true,
+                syncing: false,
+                pendingSync: false,
+                lastSync: null,
+                config: JSON.parse(localStorage.getItem(Config.STORAGE_KEY) || 'null'),
+                selectMode: null,
+                selectedEventId: null,
+                selectedMemberId: null
+            },
+            saveConfig() {
+                localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this.state.config));
+            },
+            resetConfig() {
+                localStorage.removeItem(Config.STORAGE_KEY);
+                this.state.config = null;
+            },
+            findEvent(id) {
+                return this.state.events.find(e => e.id === id);
+            },
+            findMember(id) {
+                return this.state.members.find(m => m.id === id);
+            },
+            addEvent(event) {
+                this.state.events.push(event);
+            },
+            updateEvent(id, data) {
+                const idx = this.state.events.findIndex(e => e.id === id);
+                if (idx !== -1) this.state.events[idx] = data;
+            },
+            deleteEvent(id) {
+                this.state.events = this.state.events.filter(e => e.id !== id);
+            },
+            addMember(member) {
+                this.state.members.push(member);
+            },
+            updateMember(id, data) {
+                const idx = this.state.members.findIndex(m => m.id === id);
+                if (idx !== -1) this.state.members[idx] = data;
+            },
+            deleteMember(id) {
+                this.state.members = this.state.members.filter(m => m.id !== id);
+            },
+            getFilteredEvents() {
+                let events = this.state.events;
+                if (this.state.filterMember !== 'all') {
+                    events = events.filter(e => e.memberId === this.state.filterMember || e.memberId === 'family');
+                }
+                return events;
+            }
+        };
+        // ============================================================
+        // CloudAPI Module - クラウド通信
+        // ============================================================
+        const CloudAPI = {
+            async createBin(apiKey, data) {
+                const res = await fetch(Config.API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey, 'X-Bin-Private': 'false' },
+                    body: JSON.stringify(data)
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.message || 'Bin作成に失敗しました');
+                return json.metadata.id;
+            },
+            async updateBin(data) {
+                const { config } = StateManager.state;
+                const res = await fetch(`${Config.API_URL}/${config.binId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Master-Key': config.apiKey },
+                    body: JSON.stringify(data)
+                });
+                if (!res.ok) {
+                    const json = await res.json();
+                    throw new Error(json.message || '同期に失敗しました');
+                }
+            },
+            async readBin() {
+                const { config } = StateManager.state;
+                const res = await fetch(`${Config.API_URL}/${config.binId}/latest`, {
                     headers: { 'X-Master-Key': config.apiKey }
                 });
-
+                if (!res.ok) throw new Error('データの取得に失敗しました');
                 const json = await res.json();
-                console.log('Cloud response:', json);
-
-                if (!res.ok) {
-                    throw new Error(json.message || `HTTP ${res.status}`);
+                return json.record;
+            },
+            async syncToCloud() {
+                const s = StateManager.state;
+                if (!s.config || s.syncing) return;
+                s.syncing = true;
+                s.pendingSync = true;
+                try {
+                    await this.updateBin({ events: s.events, members: s.members, updatedAt: Date.now() });
+                    s.lastSync = new Date();
+                    s.pendingSync = false;
+                } catch (e) {
+                    console.error('Sync error:', e);
+                    s.pendingSync = false;
                 }
-
-                if (json.record && json.record.events) {
-                    events = json.record.events;
-                    saveToLocal();
-                    setSyncStatus('読込完了 ✓ (' + events.length + '件)');
-                    console.log('Loaded events:', events);
-                    renderCalendar();
-                } else {
-                    setSyncStatus('データなし');
-                    console.log('No events in response');
-                }
-                return true;
-            } catch (e) {
-                console.error('Cloud load error:', e);
-                setSyncStatus('読込エラー: ' + e.message);
-                alert('読み込みエラー: ' + e.message);
-                return false;
+                s.syncing = false;
+                App.render();
+            },
+            async syncFromCloud() {
+                const s = StateManager.state;
+                if (!s.config || s.syncing || s.pendingSync) return;
+                try {
+                    const data = await this.readBin();
+                    if (data && !s.pendingSync) {
+                        s.events = data.events || [];
+                        s.members = data.members || [];
+                        s.lastSync = new Date();
+                        const activeEl = document.activeElement;
+                        if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
+                            UIRenderer.updateCalendarOnly();
+                            UIRenderer.updateSidebarOnly();
+                        } else {
+                            App.render();
+                        }
+                    }
+                } catch (e) { console.error('Fetch error:', e); }
             }
-        }
-
-        async function createBin(apiKey) {
-            setSyncStatus('作成中...');
-            const res = await fetch(API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Master-Key': apiKey,
-                    'X-Bin-Private': 'false'
-                },
-                body: JSON.stringify({ events: [], updatedAt: Date.now() })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Bin作成失敗');
-            }
-
-            const json = await res.json();
-            return json.metadata.id;
-        }
-
-        function setSyncStatus(msg) {
-            syncStatus = msg;
-            const el = document.getElementById('syncStatus');
-            if (el) el.textContent = msg;
-        }
-
-        // ============================================================
-        // ユーティリティ
-        // ============================================================
-        function formatDate(d) {
-            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        }
-
-        function generateId() {
-            return Date.now().toString(36) + Math.random().toString(36).substr(2);
-        }
-
-        function getTimeOptions() {
-            const opts = [];
-            for (let h = 0; h <= 23; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    opts.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-                }
-            }
-            return opts;
-        }
-
-        const holidays = {
-            '2026-01-01': '元日', '2026-01-12': '成人の日', '2026-02-11': '建国記念の日',
-            '2026-02-23': '天皇誕生日', '2026-03-20': '春分の日', '2026-04-29': '昭和の日',
-            '2026-05-03': '憲法記念日', '2026-05-04': 'みどりの日', '2026-05-05': 'こどもの日',
-            '2026-05-06': '振替休日', '2026-07-20': '海の日', '2026-08-11': '山の日',
-            '2026-09-21': '敬老の日', '2026-09-23': '秋分の日', '2026-10-12': 'スポーツの日',
-            '2026-11-03': '文化の日', '2026-11-23': '勤労感謝の日'
         };
-
-        function getCalendarDays(year, month) {
-            const first = new Date(year, month, 1);
-            const last = new Date(year, month + 1, 0);
-            const days = [];
-            for (let i = first.getDay() - 1; i >= 0; i--) days.push({ date: new Date(year, month, -i), current: false });
-            for (let i = 1; i <= last.getDate(); i++) days.push({ date: new Date(year, month, i), current: true });
-            while (days.length < 42) days.push({ date: new Date(year, month + 1, days.length - last.getDate() - first.getDay() + 1), current: false });
-            return days;
-        }
-
-        function getCategoryById(id) {
-            return CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
-        }
-
         // ============================================================
-        // レンダリング
+        // FormBuilder Module - フォームテンプレート共通化
         // ============================================================
-        function renderCalendar() {
-            const container = document.getElementById('calendarGrid');
-            if (!container) return;
-
-            const y = currentDate.getFullYear(), m = currentDate.getMonth();
-            const days = getCalendarDays(y, m);
-            const today = formatDate(new Date());
-            const filteredEvents = filterCategory ? events.filter(e => e.category === filterCategory) : events;
-
-            container.innerHTML = days.map(d => {
-                const dateStr = formatDate(d.date);
-                const dayEvents = filteredEvents.filter(e => e.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime));
-                const isToday = dateStr === today;
-                const holiday = holidays[dateStr];
-                const isSun = d.date.getDay() === 0, isSat = d.date.getDay() === 6;
-
-                const evHtml = dayEvents.map(e => {
-                    const cat = getCategoryById(e.category);
-                    return `<div class="event-item p-1 rounded text-white bg-${cat.color}-500" onclick="event.stopPropagation(); openEditEvent('${e.id}')">${e.startTime} ${e.title}</div>`;
-                }).join('');
-
+        const FormBuilder = {
+            timeSelect(name, selected = '', onChange = '') {
+                const options = Utils.getTimeOptions().map(t =>
+                    `<option value="${t}" ${t === selected ? 'selected' : ''}>${t}</option>`
+                ).join('');
+                return `<select name="${name}" ${onChange} class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">${options}</select>`;
+            },
+            memberSelect(name, selected = 'family', showAll = false) {
+                const members = StateManager.state.members;
+                let options = showAll ? '<option value="all">全員表示</option>' : '';
+                options += Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
+                    `<option value="${id}" ${id === selected ? 'selected' : ''}>${info.name}</option>`
+                ).join('');
+                // カスタムメンバーも追加
+                members.filter(m => !Config.MEMBER_COLORS[m.id]).forEach(m => {
+                    options += `<option value="${m.id}" ${m.id === selected ? 'selected' : ''}>${m.name}</option>`;
+                });
+                return `<select name="${name}" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">${options}</select>`;
+            },
+            eventForm(event = null, date = '') {
+                const isEdit = !!event;
+                const e = event || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', memo: '', isAllDay: false };
+                const formDate = event ? event.date : date;
+                const formId = event ? event.id : 'null';
                 return `
-            <div class="calendar-cell border-b border-r border-primary-100 p-1 ${d.current ? 'bg-white' : 'bg-gray-50'} cursor-pointer hover:bg-primary-50" onclick="openAddEvent('${dateStr}')">
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-xs md:text-sm font-semibold ${isToday ? 'bg-primary-500 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''} ${isSun || holiday ? 'text-red-500' : isSat ? 'text-blue-500' : ''}">${d.date.getDate()}</span>
-                    ${holiday ? `<span class="text-[9px] text-red-500 hidden md:block">${holiday}</span>` : ''}
-                </div>
-                <div class="space-y-1">${evHtml}</div>
-            </div>`;
-            }).join('');
-
-            document.getElementById('monthLabel').textContent = `${y}年${m + 1}月`;
-            renderFilterButtons();
-        }
-
-        function renderFilterButtons() {
-            const container = document.getElementById('filterButtons');
-            if (!container) return;
-
-            const allBtn = `<button onclick="setFilter(null)" class="px-2 py-1 rounded text-xs ${!filterCategory ? 'bg-gray-600 text-white' : 'bg-gray-100'}">全て</button>`;
-            const catBtns = CATEGORIES.map(c =>
-                `<button onclick="setFilter('${c.id}')" class="px-2 py-1 rounded text-xs ${filterCategory === c.id ? `bg-${c.color}-500 text-white` : `bg-${c.color}-100 text-${c.color}-700`}">${c.name}</button>`
-            ).join('');
-            container.innerHTML = allBtn + catBtns;
-        }
-
-        function render() {
-            const app = document.getElementById('app');
-
-            if (!config) {
-                app.innerHTML = `
-            <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary-100 to-primary-200">
-                <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-                    <div class="text-center mb-6">
-                        <h1 class="text-2xl font-bold text-primary-800">家族カレンダー</h1>
-                        <p class="text-primary-600 mt-2 text-sm">家族で予定を共有しましょう</p>
-                    </div>
+                <form id="eventForm" onsubmit="App.saveEvent(event, ${isEdit ? `'${formId}'` : 'null'}, '${formDate}')">
                     <div class="space-y-4">
-                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                            <p class="text-sm text-yellow-800"><strong>重要:</strong> Master Keyを使用してください。Access Keyは書き込み権限の問題で動作しない場合があります。</p>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">予定のタイトル</label>
+                            <input type="text" name="title" value="${e.title}" required placeholder="例：買い物、習い事、病院" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">JSONBin.io Master Key</label>
-                            <input type="text" id="apiKey" placeholder="$2a$10$..." class="w-full px-4 py-3 border rounded-lg">
-                            <p class="text-xs text-gray-500 mt-1"><a href="https://jsonbin.io/app/api-keys" target="_blank" class="text-primary-600 underline">jsonbin.io/app/api-keys</a> で取得</p>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">誰の予定？</label>
+                            ${this.memberSelect('memberId', e.memberId)}
+                        </div>
+                        <div class="flex items-center gap-2 py-2">
+                            <input type="checkbox" name="isAllDay" id="isAllDay${isEdit ? 'Edit' : ''}" ${e.isAllDay ? 'checked' : ''} 
+                                onchange="document.getElementById('timeInputs${isEdit ? 'Edit' : ''}').style.display = this.checked ? 'none' : 'grid'">
+                            <label for="isAllDay${isEdit ? 'Edit' : ''}" class="text-sm text-slate-700">終日の予定</label>
+                        </div>
+                        <div id="timeInputs${isEdit ? 'Edit' : ''}" class="grid grid-cols-2 gap-4" style="${e.isAllDay ? 'display: none' : ''}">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">開始時間</label>
+                                ${this.timeSelect('startTime', e.startTime, 'onchange="App.autoEndTime(this)"')}
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">終了時間</label>
+                                ${this.timeSelect('endTime', e.endTime)}
+                            </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Bin ID（家族と共有する場合）</label>
-                            <input type="text" id="binId" placeholder="空欄なら新規作成" class="w-full px-4 py-3 border rounded-lg">
-                            <p class="text-xs text-gray-500 mt-1">既存のカレンダーに参加する場合はBin IDを入力</p>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">メモ（任意）</label>
+                            <textarea name="memo" rows="2" placeholder="追加情報があれば入力" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">${e.memo || ''}</textarea>
                         </div>
-                        <button onclick="setupConfig()" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-lg font-semibold">はじめる</button>
                     </div>
-                </div>
-            </div>`;
-                return;
+                    ${isEdit ? `
+                    <div class="mt-4 p-3 bg-slate-50 rounded-lg">
+                        <p class="text-sm text-slate-600 mb-2">📅 別の日に移動・コピー</p>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="SelectMode.start('copy', '${e.id}')" class="flex-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm transition">コピー</button>
+                            <button type="button" onclick="SelectMode.start('move', '${e.id}')" class="flex-1 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm transition">移動</button>
+                        </div>
+                    </div>` : ''}
+                    <div class="mt-6 flex gap-2 justify-end">
+                        ${isEdit ? `<button type="button" onclick="App.deleteEvent('${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
+                        <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
+                    </div>
+                </form>`;
+            },
+            memberForm(member = null) {
+                const isEdit = !!member;
+                const m = member || { name: '', colorId: 'child1' };
+                const formId = member ? member.id : 'null';
+                const colorOptions = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
+                    `<option value="${id}" ${id === m.colorId ? 'selected' : ''}>${info.name}の色</option>`
+                ).join('');
+                return `
+                <form onsubmit="App.saveMember(event, ${isEdit ? `'${formId}'` : 'null'})">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">名前</label>
+                            <input type="text" name="name" value="${m.name}" required placeholder="例：太郎、花子" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">表示カラー</label>
+                            <select name="colorId" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                                ${colorOptions}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex gap-2 justify-end">
+                        <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
+                    </div>
+                </form>`;
             }
-
-            app.innerHTML = `
-        <header class="bg-gradient-to-r from-primary-600 to-primary-700 text-white p-4 shadow-lg sticky top-0 z-40">
-            <div class="max-w-4xl mx-auto flex justify-between items-center">
-                <h1 class="text-lg md:text-2xl font-bold">家族カレンダー</h1>
-                <div class="flex items-center gap-2 text-xs">
-                    <span id="syncStatus" class="hidden md:inline">${syncStatus}</span>
-                    <button onclick="cloudLoad()" class="bg-primary-800 px-2 py-1 rounded">読込</button>
-                    <button onclick="cloudSave()" class="bg-green-600 px-2 py-1 rounded">保存</button>
-                    <button onclick="resetConfig()" class="bg-red-600 px-2 py-1 rounded">設定</button>
-                </div>
-            </div>
-        </header>
-        <main class="max-w-4xl mx-auto p-2 md:p-4">
-            <div class="bg-white rounded-lg shadow p-3 mb-3">
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        };
+        // ============================================================
+        // ModalManager Module - モーダル管理
+        // ============================================================
+        const ModalManager = {
+            show(title, content) {
+                const html = `
+                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 fade-in" onclick="ModalManager.close(event)">
+                    <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onclick="event.stopPropagation()">
+                        <h2 class="text-xl font-bold mb-4 text-slate-800">${title}</h2>
+                        ${content}
+                    </div>
+                </div>`;
+                document.body.insertAdjacentHTML('beforeend', html);
+            },
+            close(e) {
+                if (e && e.target !== e.currentTarget) return;
+                document.querySelector('.fixed.inset-0')?.remove();
+            }
+        };
+        // ============================================================
+        // SelectMode Module - 選択モード（モバイル用コピー/移動）
+        // ============================================================
+        const SelectMode = {
+            start(mode, eventId) {
+                StateManager.state.selectMode = mode;
+                StateManager.state.selectedEventId = eventId;
+                ModalManager.close();
+                App.render();
+                this.showBanner();
+            },
+            showBanner() {
+                document.querySelector('.copy-mode-banner')?.remove();
+                const messages = {
+                    copy: '📅 日付をタップしてコピー先を選択',
+                    move: '📅 日付をタップして移動先を選択'
+                };
+                const banner = document.createElement('div');
+                banner.className = 'copy-mode-banner';
+                banner.innerHTML = `${messages[StateManager.state.selectMode]} <button onclick="SelectMode.cancel()" style="margin-left:8px; background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:15px;">✕</button>`;
+                document.body.appendChild(banner);
+                document.getElementById('app').classList.add('select-mode');
+            },
+            cancel() {
+                StateManager.state.selectMode = null;
+                StateManager.state.selectedEventId = null;
+                document.querySelector('.copy-mode-banner')?.remove();
+                document.getElementById('app').classList.remove('select-mode');
+                App.render();
+            },
+            execute(date) {
+                const s = StateManager.state;
+                if (s.selectMode === 'copy' && s.selectedEventId) {
+                    const event = StateManager.findEvent(s.selectedEventId);
+                    if (event) {
+                        StateManager.addEvent({ ...event, id: Utils.generateId(), date });
+                        CloudAPI.syncToCloud();
+                    }
+                } else if (s.selectMode === 'move' && s.selectedEventId) {
+                    const event = StateManager.findEvent(s.selectedEventId);
+                    if (event) {
+                        event.date = date;
+                        CloudAPI.syncToCloud();
+                    }
+                }
+                this.cancel();
+            }
+        };
+        // ============================================================
+        // DragDrop Module - ドラッグ&ドロップ
+        // ============================================================
+        const DragDrop = {
+            handleStart(e, id) {
+                StateManager.state.dragData = { type: 'event', id };
+                e.dataTransfer.effectAllowed = 'copyMove';
+            },
+            handleOver(e) {
+                e.preventDefault();
+                e.currentTarget.classList.add('drag-over');
+            },
+            handleDrop(e, date) {
+                e.preventDefault();
+                e.currentTarget.classList.remove('drag-over');
+                if (!StateManager.state.dragData) return;
+                this.executeDrop(date);
+            },
+            executeDrop(date) {
+                const d = StateManager.state.dragData;
+                if (!d) return;
+                if (d.type === 'event') {
+                    const mode = confirm('コピーしますか？\n（OKでコピー、キャンセルで移動）') ? 'copy' : 'move';
+                    const event = StateManager.findEvent(d.id);
+                    if (event) {
+                        if (mode === 'copy') StateManager.addEvent({ ...event, id: Utils.generateId(), date });
+                        else event.date = date;
+                        CloudAPI.syncToCloud();
+                        App.render();
+                    }
+                }
+                StateManager.state.dragData = null;
+            },
+            attachListeners() {
+                document.querySelectorAll('[ondragover]').forEach(el =>
+                    el.addEventListener('dragleave', e => e.currentTarget.classList.remove('drag-over'))
+                );
+            }
+        };
+        // ============================================================
+        // UIRenderer Module - UI描画
+        // ============================================================
+        const UIRenderer = {
+            buildCalendarCell(d, events, today) {
+                const dateStr = Utils.formatDate(d.date);
+                const dayEvents = events.filter(e => e.date === dateStr).sort((a, b) => {
+                    if (a.isAllDay && !b.isAllDay) return -1;
+                    if (!a.isAllDay && b.isAllDay) return 1;
+                    return (a.startTime || '').localeCompare(b.startTime || '');
+                });
+                const isToday = dateStr === today;
+                const isHoliday = Utils.getHoliday(dateStr);
+                const isSunday = d.date.getDay() === 0;
+                const isSaturday = d.date.getDay() === 6;
+                const eventsHtml = dayEvents.map(e => {
+                    const style = Utils.getMemberStyle(e.memberId);
+                    const timeStr = e.isAllDay ? '終日' : e.startTime;
+                    return `
+                    <div class="event-item p-1 rounded text-white ${style.bg}" 
+                         data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
+                         onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
+                        <span class="opacity-75">${timeStr}</span> ${e.title}
+                    </div>`;
+                }).join('');
+                return `
+                <div class="calendar-cell border-b border-r border-slate-200 p-1 ${d.current ? 'bg-white' : 'bg-slate-50'} hover:bg-primary-50 cursor-pointer transition" 
+                     data-date="${dateStr}" ondragover="DragDrop.handleOver(event)" ondrop="DragDrop.handleDrop(event, '${dateStr}')" 
+                     onclick="App.handleCellClick('${dateStr}')">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs md:text-sm font-semibold ${isToday ? 'bg-primary-500 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''} ${isSunday || isHoliday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-slate-700'}">${d.date.getDate()}</span>
+                        ${isHoliday ? `<span class="text-[8px] text-red-500 truncate hidden md:block">${isHoliday}</span>` : ''}
+                    </div>
+                    <div class="space-y-1">${eventsHtml}</div>
+                </div>`;
+            },
+            calendar() {
+                const s = StateManager.state;
+                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
+                const days = Utils.getCalendarDays(y, m);
+                const today = Utils.formatDate(new Date());
+                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+                const events = StateManager.getFilteredEvents();
+                const weekdaysHtml = weekdays.map((d, i) =>
+                    `<div class="p-2 text-center font-bold text-sm ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-slate-700'}">${d}</div>`
+                ).join('');
+                const cellsHtml = days.map(d => this.buildCalendarCell(d, events, today)).join('');
+                return `
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-slate-200">
+                    <div class="grid grid-cols-7 bg-slate-100">${weekdaysHtml}</div>
+                    <div class="grid grid-cols-7 border-t border-slate-200">${cellsHtml}</div>
+                </div>`;
+            },
+            calendarHeader() {
+                const s = StateManager.state;
+                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
+                return `
+                <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap items-center justify-between gap-3 border border-slate-200">
                     <div class="flex items-center gap-2">
-                        <button onclick="prevMonth()" class="p-2 hover:bg-primary-100 rounded-lg">◀</button>
-                        <span id="monthLabel" class="text-lg font-bold text-primary-800"></span>
-                        <button onclick="nextMonth()" class="p-2 hover:bg-primary-100 rounded-lg">▶</button>
+                        <button onclick="App.prevMonth()" class="p-2 hover:bg-slate-100 rounded-lg transition">
+                            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <span class="text-lg font-bold text-slate-800">${y}年${m + 1}月</span>
+                        <button onclick="App.nextMonth()" class="p-2 hover:bg-slate-100 rounded-lg transition">
+                            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="goToday()" class="bg-primary-100 px-3 py-1 rounded text-sm">今日</button>
-                        <label class="bg-green-100 px-3 py-1 rounded text-sm cursor-pointer">ICS<input type="file" accept=".ics" onchange="importICS(event)" class="hidden"></label>
+                    <div class="flex gap-2 items-center flex-wrap">
+                        <select id="filterSelect" onchange="App.setFilter(this.value)" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500">
+                            <option value="all" ${s.filterMember === 'all' ? 'selected' : ''}>全員表示</option>
+                            ${Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
+                                `<option value="${id}" ${s.filterMember === id ? 'selected' : ''}>${info.name}</option>`
+                            ).join('')}
+                        </select>
+                        <button onclick="App.goToday()" class="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 transition">今日</button>
+                        <button onclick="App.exportToGoogle()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm transition hidden md:block">📅 エクスポート</button>
                     </div>
-                </div>
-                <div id="filterButtons" class="flex items-center gap-2 flex-wrap"></div>
-            </div>
-            <div class="bg-white rounded-lg shadow overflow-hidden">
-                <div class="grid grid-cols-7 bg-primary-100">
-                    ${['日', '月', '火', '水', '木', '金', '土'].map((d, i) => `<div class="p-2 text-center font-bold text-sm ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-primary-800'}">${d}</div>`).join('')}
-                </div>
-                <div id="calendarGrid" class="grid grid-cols-7 border-t border-primary-200"></div>
-            </div>
-            <div class="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-                <strong>使い方:</strong> 予定を追加・編集したら「保存」ボタンでクラウドに保存。他のデバイスでは「読込」ボタンで取得。
-            </div>
-        </main>`;
-
-            renderCalendar();
-        }
-
-        // ============================================================
-        // イベント操作
-        // ============================================================
-        async function setupConfig() {
-            const apiKey = document.getElementById('apiKey').value.trim();
-            let binId = document.getElementById('binId').value.trim();
-
-            if (!apiKey) { alert('APIキーを入力してください'); return; }
-
-            try {
-                if (!binId) {
-                    binId = await createBin(apiKey);
-                    alert('カレンダーを作成しました！\n\n家族と共有するには以下のBin IDを伝えてください:\n\n' + binId + '\n\n（このIDをコピーして家族に送ってください）');
-                }
-                config = { apiKey, binId };
-                saveConfig();
-                render();
-                await cloudLoad();
-            } catch (e) {
-                alert('エラー: ' + e.message);
-            }
-        }
-
-        function resetConfig() {
-            if (confirm('設定をリセットしますか？\n（ローカルデータも削除されます）')) {
-                localStorage.removeItem(CONFIG_KEY);
-                localStorage.removeItem(EVENTS_KEY);
-                config = null;
-                events = [];
-                render();
-            }
-        }
-
-        function prevMonth() { currentDate.setMonth(currentDate.getMonth() - 1); renderCalendar(); }
-        function nextMonth() { currentDate.setMonth(currentDate.getMonth() + 1); renderCalendar(); }
-        function goToday() { currentDate = new Date(); renderCalendar(); }
-        function setFilter(cat) { filterCategory = cat; renderCalendar(); }
-
-        function openAddEvent(date) {
-            showModal('予定を追加', eventFormHtml(null, date));
-        }
-
-        function openEditEvent(id) {
-            const ev = events.find(e => e.id === id);
-            if (ev) showModal('予定を編集', eventFormHtml(ev));
-        }
-
-        function eventFormHtml(ev, date = '') {
-            const isEdit = !!ev;
-            const e = ev || { title: '', startTime: '09:00', endTime: '10:00', category: 'otou', memo: '' };
-            const d = ev ? ev.date : date;
-            const cats = CATEGORIES.map(c => `<option value="${c.id}" ${e.category === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
-            const times = getTimeOptions();
-            const startOpts = times.map(t => `<option value="${t}" ${t === e.startTime ? 'selected' : ''}>${t}</option>`).join('');
-            const endOpts = times.map(t => `<option value="${t}" ${t === (e.endTime || e.startTime) ? 'selected' : ''}>${t}</option>`).join('');
-
-            return `
-        <form onsubmit="saveEvent(event, ${isEdit ? `'${e.id}'` : 'null'}, '${d}')">
-            <div class="space-y-4">
-                <div><label class="block text-sm font-medium mb-1">予定</label>
-                    <input type="text" name="title" value="${e.title}" required class="w-full border rounded px-3 py-2"></div>
-                <div><label class="block text-sm font-medium mb-1">誰の予定？</label>
-                    <select name="category" class="w-full border rounded px-3 py-2">${cats}</select></div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-medium mb-1">開始</label>
-                        <select name="startTime" class="w-full border rounded px-3 py-2">${startOpts}</select></div>
-                    <div><label class="block text-sm font-medium mb-1">終了</label>
-                        <select name="endTime" class="w-full border rounded px-3 py-2">${endOpts}</select></div>
-                </div>
-                <div><label class="block text-sm font-medium mb-1">メモ</label>
-                    <textarea name="memo" class="w-full border rounded px-3 py-2 h-20">${e.memo || ''}</textarea></div>
-            </div>
-            <div class="mt-4 flex gap-2 justify-end">
-                ${isEdit ? `<button type="button" onclick="deleteEvent('${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded">削除</button>` : ''}
-                <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded">キャンセル</button>
-                <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded">保存</button>
-            </div>
-        </form>`;
-        }
-
-        async function saveEvent(e, id, date) {
-            e.preventDefault();
-            const form = e.target;
-            const data = {
-                id: id || generateId(),
-                date: date,
-                title: form.title.value,
-                startTime: form.startTime.value,
-                endTime: form.endTime.value,
-                category: form.category.value,
-                memo: form.memo.value
-            };
-
-            if (id) {
-                const idx = events.findIndex(ev => ev.id === id);
-                if (idx !== -1) events[idx] = data;
-            } else {
-                events.push(data);
-            }
-
-            saveToLocal();
-            closeModal();
-            renderCalendar();
-
-            // 自動でクラウドにも保存
-            await cloudSave();
-        }
-
-        async function deleteEvent(id) {
-            if (confirm('この予定を削除しますか？')) {
-                events = events.filter(e => e.id !== id);
-                saveToLocal();
-                closeModal();
-                renderCalendar();
-                await cloudSave();
-            }
-        }
-
-        function showModal(title, content) {
-            document.getElementById('modal')?.remove();
-            const html = `
-        <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="if(event.target===this)closeModal()">
-            <div class="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-                <h2 class="text-xl font-bold mb-4 text-primary-800">${title}</h2>
-                ${content}
-            </div>
-        </div>`;
-            document.body.insertAdjacentHTML('beforeend', html);
-        }
-
-        function closeModal() { document.getElementById('modal')?.remove(); }
-
-        async function importICS(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const text = await file.text();
-
-            const imported = [];
-            const lines = text.replace(/\r\n /g, '').split(/\r\n|\n|\r/);
-            let ev = null;
-            for (const line of lines) {
-                if (line === 'BEGIN:VEVENT') ev = { id: generateId(), category: 'otou', memo: '' };
-                else if (line === 'END:VEVENT' && ev && ev.date && ev.title) { imported.push(ev); ev = null; }
-                else if (ev) {
-                    if (line.startsWith('DTSTART')) {
-                        const m = line.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
-                        if (m) { ev.date = `${m[1]}-${m[2]}-${m[3]}`; ev.startTime = m[4] && m[5] ? `${m[4]}:${m[5]}` : '09:00'; }
-                    } else if (line.startsWith('DTEND')) {
-                        const m = line.match(/T(\d{2})(\d{2})/);
-                        if (m) ev.endTime = `${m[1]}:${m[2]}`;
-                    } else if (line.startsWith('SUMMARY:')) ev.title = line.substring(8);
+                </div>`;
+            },
+            sidebar() {
+                const s = StateManager.state;
+                const today = Utils.formatDate(new Date());
+                const upcomingEvents = s.events
+                    .filter(e => e.date >= today)
+                    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''))
+                    .slice(0, 5);
+                const upcomingHtml = upcomingEvents.length > 0 ? upcomingEvents.map(e => {
+                    const style = Utils.getMemberStyle(e.memberId);
+                    const dateObj = new Date(e.date);
+                    const dateStr = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                    return `
+                    <div class="p-2 rounded-lg ${style.light} ${style.border} border cursor-pointer hover:shadow-md transition" onclick="App.openEditEvent('${e.id}')">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-slate-600">${dateStr}</span>
+                            <span class="text-xs ${e.isAllDay ? 'text-slate-500' : ''}">${e.isAllDay ? '終日' : e.startTime}</span>
+                        </div>
+                        <div class="font-medium text-sm text-slate-800 truncate">${e.title}</div>
+                    </div>`;
+                }).join('') : '<p class="text-sm text-slate-400 text-center py-4">予定なし</p>';
+                // 凡例
+                const legendHtml = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
+                    `<div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full ${info.bg}"></span>
+                        <span class="text-xs text-slate-600">${info.name}</span>
+                    </div>`
+                ).join('');
+                return `
+                <div class="space-y-4">
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                        <h3 class="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            今後の予定
+                        </h3>
+                        <div class="space-y-2">${upcomingHtml}</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                        <h3 class="font-bold text-slate-800 mb-3">カラー凡例</h3>
+                        <div class="grid grid-cols-2 gap-2">${legendHtml}</div>
+                    </div>
+                    ${s.isAdmin ? `
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                        <h3 class="font-bold text-slate-800 mb-3">管理</h3>
+                        <div class="space-y-2">
+                            <button onclick="App.openAddMember()" class="w-full bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg text-sm transition">
+                                👤 メンバー追加
+                            </button>
+                            <button onclick="App.showSettings()" class="w-full bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg text-sm transition">
+                                ⚙️ 設定
+                            </button>
+                        </div>
+                    </div>` : ''}
+                </div>`;
+            },
+            updateCalendarOnly() {
+                const container = document.querySelector('.grid.grid-cols-7.border-t');
+                if (!container) return;
+                const s = StateManager.state;
+                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
+                const days = Utils.getCalendarDays(y, m);
+                const today = Utils.formatDate(new Date());
+                const events = StateManager.getFilteredEvents();
+                container.innerHTML = days.map(d => this.buildCalendarCell(d, events, today)).join('');
+            },
+            updateSidebarOnly() {
+                const panel = document.getElementById('sidebarPanel');
+                if (panel) {
+                    panel.innerHTML = this.sidebar();
                 }
             }
-
-            if (imported.length === 0) { alert('読み込める予定がありません'); return; }
-
-            const cat = prompt(`${imported.length}件読み込みます。誰の予定？\n1:おとうー 2:まま 3:まひる 4:あゆは`, '1');
-            const catMap = { '1': 'otou', '2': 'mama', '3': 'mahiru', '4': 'ayuha' };
-            imported.forEach(ev => {
-                ev.category = catMap[cat] || 'otou';
-                if (!ev.endTime) ev.endTime = ev.startTime;
-                events.push(ev);
-            });
-
-            saveToLocal();
-            renderCalendar();
-            await cloudSave();
-            alert(`${imported.length}件読み込みました`);
-            e.target.value = '';
-        }
-
+        };
         // ============================================================
-        // 初期化
+        // App Module - メインアプリケーション
         // ============================================================
-        loadFromLocal();
-        render();
-
-        // 設定済みなら初回読み込み
-        if (config) {
-            cloudLoad();
-        }
+        const App = {
+            syncInterval: null,
+            init() {
+                if (StateManager.state.config) this.startSync();
+                this.render();
+            },
+            startSync() {
+                if (this.syncInterval) clearInterval(this.syncInterval);
+                CloudAPI.syncFromCloud();
+                this.syncInterval = setInterval(() => CloudAPI.syncFromCloud(), Config.SYNC_INTERVAL);
+            },
+            render() {
+                const app = document.getElementById('app');
+                const s = StateManager.state;
+                if (!s.config) { app.innerHTML = this.renderSetup(); return; }
+                app.innerHTML = `
+                <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center flex-wrap gap-2">
+                        <h1 class="text-xl md:text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <span class="text-2xl">📅</span>
+                            家族カレンダー
+                        </h1>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-slate-500 ${s.syncing ? 'sync-indicator' : ''}">${s.lastSync ? '✓ 同期済' : '同期中...'}</span>
+                            ${!s.isAdmin ? `
+                            <button onclick="App.openAdminLogin()" class="text-slate-400 hover:text-slate-600 transition" title="管理者ログイン">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            </button>` : `
+                            <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">管理者</span>
+                            <button onclick="App.logoutAdmin()" class="text-slate-400 hover:text-slate-600 text-sm transition">ログアウト</button>`}
+                        </div>
+                    </div>
+                </header>
+                <main class="max-w-7xl mx-auto p-2 md:p-4">
+                    <div class="flex flex-col lg:flex-row gap-4">
+                        <div class="flex-1">
+                            ${UIRenderer.calendarHeader()}
+                            ${UIRenderer.calendar()}
+                        </div>
+                        <div class="lg:w-72 ${s.showSidebar ? '' : 'hidden lg:block'}" id="sidebarPanel">
+                            ${UIRenderer.sidebar()}
+                        </div>
+                    </div>
+                </main>
+                <button onclick="App.toggleSidebar()" class="lg:hidden fixed bottom-4 right-4 bg-primary-500 text-white p-3 rounded-full shadow-lg z-50 hover:bg-primary-600 transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>`;
+                DragDrop.attachListeners();
+            },
+            renderSetup() {
+                return `
+                <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary-50 to-slate-100">
+                    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-200">
+                        <div class="text-center mb-8">
+                            <div class="w-20 h-20 bg-primary-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <span class="text-4xl">📅</span>
+                            </div>
+                            <h1 class="text-2xl font-bold text-slate-800">家族カレンダー</h1>
+                            <p class="text-slate-500 mt-2">クラウド同期の初期設定を行います</p>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">JSONBin.io マスターキー</label>
+                                <input type="text" id="apiKey" placeholder="$2a$10$..." 
+                                    class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Bin ID（既存データがある場合）</label>
+                                <input type="text" id="binId" placeholder="空欄で新規作成" 
+                                    class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            </div>
+                            <button onclick="App.setupConfig()" 
+                                class="w-full bg-primary-500 hover:bg-primary-600 text-white py-3 rounded-xl font-semibold transition shadow-lg shadow-primary-500/30">
+                                設定を保存して開始
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+            },
+            async setupConfig() {
+                const apiKey = document.getElementById('apiKey').value.trim();
+                let binId = document.getElementById('binId').value.trim();
+                if (!apiKey) { alert('マスターキーを入力してください'); return; }
+                try {
+                    if (!binId) {
+                        binId = await CloudAPI.createBin(apiKey, { events: [], members: [], updatedAt: Date.now() });
+                        alert('新しいカレンダーを作成しました！\n\n他のデバイスで同期するには以下のBin IDを使用してください:\n\n' + binId);
+                    }
+                    StateManager.state.config = { apiKey, binId };
+                    StateManager.saveConfig();
+                    this.startSync();
+                    this.render();
+                } catch (e) { alert('エラーが発生しました: ' + e.message); }
+            },
+            // Navigation
+            prevMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() - 1); this.render(); },
+            nextMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() + 1); this.render(); },
+            goToday() { StateManager.state.currentDate = new Date(); this.render(); },
+            toggleSidebar() { StateManager.state.showSidebar = !StateManager.state.showSidebar; this.render(); },
+            setFilter(value) { StateManager.state.filterMember = value; UIRenderer.updateCalendarOnly(); },
+            // Admin
+            openAdminLogin() {
+                ModalManager.show('管理者ログイン', `
+                    <div class="space-y-4">
+                        <p class="text-sm text-slate-600">管理者パスワードを入力してください</p>
+                        <input type="password" id="adminPass" placeholder="パスワード" maxlength="10" 
+                            class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 text-center text-xl tracking-widest">
+                        <div class="flex gap-2 justify-end">
+                            <button onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                            <button onclick="App.loginAdmin()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">ログイン</button>
+                        </div>
+                    </div>`);
+            },
+            loginAdmin() {
+                if (document.getElementById('adminPass').value === Config.ADMIN_PASSWORD) {
+                    StateManager.state.isAdmin = true;
+                    ModalManager.close();
+                    this.render();
+                } else {
+                    alert('パスワードが違います');
+                }
+            },
+            logoutAdmin() {
+                StateManager.state.isAdmin = false;
+                this.render();
+            },
+            // Events
+            handleCellClick(date) {
+                if (StateManager.state.selectMode) SelectMode.execute(date);
+                else this.openAddEvent(date);
+            },
+            openAddEvent(date) {
+                ModalManager.show('予定を追加', FormBuilder.eventForm(null, date));
+            },
+            openEditEvent(id) {
+                const event = StateManager.findEvent(id);
+                if (event) ModalManager.show('予定を編集', FormBuilder.eventForm(event));
+            },
+            saveEvent(e, id, date) {
+                e.preventDefault();
+                const form = e.target;
+                const data = {
+                    id: id || Utils.generateId(),
+                    date,
+                    title: form.title.value,
+                    memberId: form.memberId.value,
+                    isAllDay: form.isAllDay.checked,
+                    startTime: form.isAllDay.checked ? '' : form.startTime.value,
+                    endTime: form.isAllDay.checked ? '' : form.endTime.value,
+                    memo: form.memo.value
+                };
+                if (id) StateManager.updateEvent(id, data);
+                else StateManager.addEvent(data);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+            },
+            deleteEvent(id) {
+                if (confirm('この予定を削除しますか？')) {
+                    StateManager.deleteEvent(id);
+                    CloudAPI.syncToCloud();
+                    ModalManager.close();
+                    this.render();
+                }
+            },
+            autoEndTime(el) { 
+                const form = el.closest('form');
+                if (form && form.endTime) {
+                    form.endTime.value = Utils.addHour(el.value); 
+                }
+            },
+            // Members
+            openAddMember() {
+                ModalManager.show('メンバー追加', FormBuilder.memberForm());
+            },
+            editMember(id) {
+                const member = StateManager.findMember(id);
+                if (member) ModalManager.show('メンバー編集', FormBuilder.memberForm(member));
+            },
+            saveMember(e, id) {
+                e.preventDefault();
+                const form = e.target;
+                const data = {
+                    id: id || Utils.generateId(),
+                    name: form.name.value,
+                    colorId: form.colorId.value
+                };
+                if (id) StateManager.updateMember(id, data);
+                else StateManager.addMember(data);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+            },
+            deleteMember(id) {
+                if (confirm('このメンバーを削除しますか？')) {
+                    StateManager.deleteMember(id);
+                    CloudAPI.syncToCloud();
+                    this.render();
+                }
+            },
+            // Settings
+            showSettings() {
+                const s = StateManager.state;
+                ModalManager.show('設定', `
+                    <div class="space-y-4">
+                        <div class="p-3 bg-slate-50 rounded-lg">
+                            <p class="text-sm font-medium text-slate-700 mb-1">Bin ID</p>
+                            <p class="text-xs text-slate-500 font-mono break-all">${s.config.binId}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="navigator.clipboard.writeText('${s.config.binId}'); alert('コピーしました')" 
+                                class="flex-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm transition">
+                                📋 Bin IDをコピー
+                            </button>
+                        </div>
+                        <hr class="border-slate-200">
+                        <button onclick="App.resetConfig()" class="w-full px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm transition">
+                            ⚠️ 設定をリセット
+                        </button>
+                        <button onclick="ModalManager.close()" class="w-full px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">閉じる</button>
+                    </div>`);
+            },
+            resetConfig() {
+                if (confirm('設定をリセットしますか？\nカレンダーデータは削除されません。')) {
+                    StateManager.resetConfig();
+                    StateManager.state.isAdmin = false;
+                    this.render();
+                }
+            },
+            // Export
+            exportToGoogle() {
+                const s = StateManager.state;
+                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
+                const monthEvents = s.events.filter(e => {
+                    const d = new Date(e.date);
+                    return d.getFullYear() === y && d.getMonth() === m;
+                });
+                if (monthEvents.length === 0) { alert('この月に予定がありません'); return; }
+                let ics = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Family Calendar//JP\n';
+                monthEvents.forEach(e => {
+                    const dc = e.date.replace(/-/g, '');
+                    if (e.isAllDay) {
+                        ics += `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${dc}\nDTEND;VALUE=DATE:${dc}\nSUMMARY:${e.title}\nEND:VEVENT\n`;
+                    } else {
+                        const sc = e.startTime.replace(':', '') + '00';
+                        const ec = e.endTime.replace(':', '') + '00';
+                        ics += `BEGIN:VEVENT\nDTSTART;TZID=Asia/Tokyo:${dc}T${sc}\nDTEND;TZID=Asia/Tokyo:${dc}T${ec}\nSUMMARY:${e.title}\nEND:VEVENT\n`;
+                    }
+                });
+                ics += 'END:VCALENDAR';
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+                a.download = `family_calendar_${y}${String(m + 1).padStart(2, '0')}.ics`;
+                a.click();
+            }
+        };
+        // Initialize
+        App.init();
     </script>
 </body>
-
 </html>
