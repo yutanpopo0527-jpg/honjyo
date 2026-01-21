@@ -133,24 +133,28 @@
                     headers: { 'X-Master-Key': config.apiKey }
                 });
 
+                const json = await res.json();
+                console.log('Cloud response:', json);
+
                 if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.message || `HTTP ${res.status}`);
+                    throw new Error(json.message || `HTTP ${res.status}`);
                 }
 
-                const json = await res.json();
                 if (json.record && json.record.events) {
                     events = json.record.events;
                     saveToLocal();
                     setSyncStatus('読込完了 ✓ (' + events.length + '件)');
+                    console.log('Loaded events:', events);
                     renderCalendar();
                 } else {
                     setSyncStatus('データなし');
+                    console.log('No events in response');
                 }
                 return true;
             } catch (e) {
                 console.error('Cloud load error:', e);
                 setSyncStatus('読込エラー: ' + e.message);
+                alert('読み込みエラー: ' + e.message);
                 return false;
             }
         }
