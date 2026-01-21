@@ -196,7 +196,7 @@
                 config: JSON.parse(localStorage.getItem(Config.STORAGE_KEY) || 'null'),
                 selectMode: null,
                 selectedEventId: null,
-                filterCategory: null // null = 全て表示
+                filterCategory: null
             },
 
             saveConfig() {
@@ -232,30 +232,24 @@
         };
 
         // ============================================================
-        // CloudAPI Module
+        // CloudAPI Module (JSONBin.io)
         // ============================================================
         const CloudAPI = {
-            async createBin(apiKey, data) {
-                // 新規作成はMaster Key必須（またはCreate権限のあるAccess Key）
-                // 簡易化のため、作成時は常にX-Master-Keyとしてトライするが、Access Keyでの作成も考慮してヘッダーを分岐させるのが理想。
-                // ここではユーザーが選んだタイプに従う。
-                const keyType = document.querySelector('input[name="keyType"]:checked')?.value || 'master';
-                const headerKey = keyType === 'master' ? 'X-Master-Key' : 'X-Access-Key';
-
+            async createBin(apiKey, keyType, data) {
+                const headerKey = keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
                 const res = await fetch(Config.API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', [headerKey]: apiKey, 'X-Bin-Private': 'false' },
                     body: JSON.stringify(data)
                 });
                 const json = await res.json();
-                if (!res.ok) throw new Error(json.message || 'Bin作成に失敗しました。Access Keyの場合は作成権限がない可能性があります。');
+                if (!res.ok) throw new Error(json.message || 'Bin作成に失敗しました');
                 return json.metadata.id;
             },
 
             async updateBin(data) {
                 const { config } = StateManager.state;
                 const headerKey = config.keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
-
                 await fetch(`${Config.API_URL}/${config.binId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', [headerKey]: config.apiKey },
@@ -266,7 +260,6 @@
             async readBin() {
                 const { config } = StateManager.state;
                 const headerKey = config.keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
-
                 const res = await fetch(`${Config.API_URL}/${config.binId}/latest`, {
                     headers: { [headerKey]: config.apiKey }
                 });
@@ -652,7 +645,7 @@
                 if (!apiKey) { alert('APIキーを入力してください'); return; }
                 try {
                     if (!binId) {
-                        binId = await CloudAPI.createBin(apiKey, { events: [], updatedAt: Date.now() });
+                        binId = await CloudAPI.createBin(apiKey, keyType, { events: [], updatedAt: Date.now() });
                         alert('カレンダーを作成しました！\nパートナーと共有するには以下のBin IDを伝えてください:\n\n' + binId);
                     }
                     StateManager.state.config = { apiKey, binId, keyType };
@@ -661,6 +654,7 @@
                     this.render();
                 } catch (e) { alert('エラーが発生しました: ' + e.message); }
             },
+
             resetConfig() { if (confirm('設定をリセットしますか？')) { StateManager.resetConfig(); this.render(); } },
             prevMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() - 1); this.render(); },
             nextMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() + 1); this.render(); },
