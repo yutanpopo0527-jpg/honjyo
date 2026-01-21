@@ -156,7 +156,30 @@
                 staygold: { name: 'STAY GOLD', color: '#000080' },
                 yoyoenglish: { name: 'YOYO ENGLISH', color: '#ffa500' },
                 church: { name: '教会', color: '#66cdaa' }
-            }
+            },
+            // メンバー追加用の追加カラー（20色）
+            EXTRA_COLORS: [
+                { name: 'ローズ', color: '#e91e63' },
+                { name: 'ラベンダー', color: '#9c27b0' },
+                { name: 'インディゴ', color: '#3f51b5' },
+                { name: 'スカイ', color: '#03a9f4' },
+                { name: 'シアン', color: '#00bcd4' },
+                { name: 'ティール', color: '#009688' },
+                { name: 'エメラルド', color: '#4caf50' },
+                { name: 'ライム', color: '#8bc34a' },
+                { name: 'イエロー', color: '#ffeb3b' },
+                { name: 'アンバー', color: '#ffc107' },
+                { name: 'ブラウン', color: '#795548' },
+                { name: 'コーラル', color: '#ff7043' },
+                { name: 'ピーチ', color: '#ffab91' },
+                { name: 'ミント', color: '#80cbc4' },
+                { name: 'スレート', color: '#607d8b' },
+                { name: 'クリムゾン', color: '#dc143c' },
+                { name: 'マゼンタ', color: '#ff00ff' },
+                { name: 'ターコイズ', color: '#40e0d0' },
+                { name: 'オリーブ', color: '#808000' },
+                { name: 'マルーン', color: '#800000' }
+            ]
         };
         // ============================================================
         // Utils Module - ユーティリティ関数（キャッシュ付き）
@@ -223,11 +246,17 @@
                 return days;
             },
             getMemberStyle(memberId) {
+                // 固定メンバー
                 const member = Config.MEMBER_COLORS[memberId];
                 if (member) {
                     return { color: member.color, name: member.name };
                 }
-                return { color: '#fa8072', name: '家族全員' };
+                // 追加メンバー
+                const customMember = StateManager.state.members.find(m => m.id === memberId);
+                if (customMember) {
+                    return { color: customMember.color, name: customMember.name };
+                }
+                return { color: '#fa8072', name: '不明' };
             }
         };
         // ============================================================
@@ -239,7 +268,9 @@
                 currentDate: new Date(),
                 events: [],
                 members: [],
-                filterMember: 'all',
+                templates: [],
+                filterMembers: [], // 空配列 = 全員表示
+                isFilterMenuOpen: false,
                 dragData: null,
                 showSidebar: true,
                 syncing: false,
@@ -284,11 +315,42 @@
                 this.state.members = this.state.members.filter(m => m.id !== id);
             },
             getFilteredEvents() {
-                let events = this.state.events;
-                if (this.state.filterMember !== 'all') {
-                    events = events.filter(e => e.memberId === this.state.filterMember || e.memberId === 'family');
+                const s = this.state;
+                if (s.filterMembers.length === 0) return s.events;
+                // 選択されたメンバーIDに含まれる予定のみ返す
+                // ※以前はfamilyを常に含めていたが、複数選択になったので選択状態に従う
+                return s.events.filter(e => s.filterMembers.includes(e.memberId));
+            },
+            // テンプレート管理
+            findTemplate(id) {
+                return this.state.templates.find(t => t.id === id);
+            },
+            addTemplate(template) {
+                this.state.templates.push(template);
+            },
+            updateTemplate(id, data) {
+                const idx = this.state.templates.findIndex(t => t.id === id);
+                if (idx !== -1) this.state.templates[idx] = data;
+            },
+            deleteTemplate(id) {
+                this.state.templates = this.state.templates.filter(t => t.id !== id);
+            },
+            // 追加メンバーの色を取得
+            getMemberColor(memberId) {
+                // 固定メンバーの色
+                if (Config.MEMBER_COLORS[memberId]) {
+                    return Config.MEMBER_COLORS[memberId].color;
                 }
-                return events;
+                // 追加メンバーの色
+                const member = this.state.members.find(m => m.id === memberId);
+                return member ? member.color : '#fa8072';
+            },
+            getMemberName(memberId) {
+                if (Config.MEMBER_COLORS[memberId]) {
+                    return Config.MEMBER_COLORS[memberId].name;
+                }
+                const member = this.state.members.find(m => m.id === memberId);
+                return member ? member.name : '不明';
             }
         };
         // ============================================================
@@ -332,7 +394,7 @@
                 s.syncing = true;
                 s.pendingSync = true;
                 try {
-                    await this.updateBin({ events: s.events, members: s.members, updatedAt: Date.now() });
+                    await this.updateBin({ events: s.events, members: s.members, templates: s.templates, updatedAt: Date.now() });
                     s.lastSync = new Date();
                     s.pendingSync = false;
                 } catch (e) {
@@ -350,6 +412,7 @@
                     if (data && !s.pendingSync) {
                         s.events = data.events || [];
                         s.members = data.members || [];
+                        s.templates = data.templates || [];
                         s.lastSync = new Date();
                         const activeEl = document.activeElement;
                         if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
@@ -453,10 +516,11 @@
             },
             memberForm(member = null) {
                 const isEdit = !!member;
-                const m = member || { name: '', colorId: 'child1' };
+                const m = member || { name: '', color: '#e91e63' };
                 const formId = member ? member.id : 'null';
-                const colorOptions = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
-                    `<option value="${id}" ${id === m.colorId ? 'selected' : ''}>${info.name}の色</option>`
+                // EXTRA_COLORSからカラー選択肢を作成
+                const colorOptions = Config.EXTRA_COLORS.map(c =>
+                    `<option value="${c.color}" ${c.color === m.color ? 'selected' : ''} style="background-color: ${c.color}; color: white">${c.name}</option>`
                 ).join('');
                 return `
                 <form onsubmit="App.saveMember(event, ${isEdit ? `'${formId}'` : 'null'})">
@@ -468,12 +532,57 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">表示カラー</label>
-                            <select name="colorId" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <select name="color" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                                 ${colorOptions}
                             </select>
                         </div>
                     </div>
                     <div class="mt-6 flex gap-2 justify-end">
+                        ${isEdit ? `<button type="button" onclick="App.deleteMember('${m.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
+                        <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
+                    </div>
+                </form>`;
+            },
+            templateForm(template = null) {
+                const isEdit = !!template;
+                const t = template || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', isAllDay: false };
+                const formId = template ? template.id : 'null';
+                return `
+                <form onsubmit="App.saveTemplate(event, ${isEdit ? `'${formId}'` : 'null'})">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">テンプレート名（予定タイトル）</label>
+                            <input type="text" name="title" value="${t.title}" required placeholder="例：ピアノ教室、サッカー練習" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">誰の予定？</label>
+                            ${this.memberSelect('memberId', t.memberId)}
+                        </div>
+                        <div class="flex items-center gap-2 py-2">
+                            <input type="checkbox" name="isAllDay" id="isAllDayTpl${isEdit ? 'Edit' : ''}" ${t.isAllDay ? 'checked' : ''} 
+                                onchange="App.toggleAllDay(this, ${isEdit ? 'true' : 'false'}, 'Tpl')">
+                            <label for="isAllDayTpl${isEdit ? 'Edit' : ''}" class="text-sm text-slate-700">終日の予定</label>
+                        </div>
+                        <div id="timeInputsTpl${isEdit ? 'Edit' : ''}" class="grid grid-cols-2 gap-4" style="${t.isAllDay ? 'display: none' : ''}">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">開始時間</label>
+                                ${this.timeSelect('startTime', t.startTime, 'onchange="App.autoEndTime(this)"')}
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">終了時間</label>
+                                ${this.timeSelect('endTime', t.endTime)}
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">メモ（任意）</label>
+                            <textarea name="memo" rows="2" placeholder="追加情報があれば入力" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">${t.memo || ''}</textarea>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex gap-2 justify-end">
+                        ${isEdit ? `<button type="button" onclick="App.deleteTemplate('${t.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
                         <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
                         <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
                     </div>
@@ -503,9 +612,9 @@
         // SelectMode Module - 選択モード（モバイル用コピー/移動）
         // ============================================================
         const SelectMode = {
-            start(mode, eventId) {
+            start(mode, data) {
                 StateManager.state.selectMode = mode;
-                StateManager.state.selectedEventId = eventId;
+                StateManager.state.selectedData = data;
                 ModalManager.close();
                 App.render();
                 this.showBanner();
@@ -514,7 +623,8 @@
                 document.querySelector('.copy-mode-banner')?.remove();
                 const messages = {
                     copy: '📅 日付をタップしてコピー先を選択',
-                    move: '📅 日付をタップして移動先を選択'
+                    move: '📅 日付をタップして移動先を選択',
+                    template: '📅 日付をタップして予定を入力'
                 };
                 const banner = document.createElement('div');
                 banner.className = 'copy-mode-banner';
@@ -524,27 +634,45 @@
             },
             cancel() {
                 StateManager.state.selectMode = null;
-                StateManager.state.selectedEventId = null;
+                StateManager.state.selectedData = null;
                 document.querySelector('.copy-mode-banner')?.remove();
                 document.getElementById('app').classList.remove('select-mode');
                 App.render();
             },
             execute(date) {
-                const s = StateManager.state;
-                if (s.selectMode === 'copy' && s.selectedEventId) {
-                    const event = StateManager.findEvent(s.selectedEventId);
+                const mode = StateManager.state.selectMode;
+                const data = StateManager.state.selectedData;
+                if (mode === 'copy' || mode === 'move') {
+                    const event = StateManager.findEvent(data);
                     if (event) {
-                        StateManager.addEvent({ ...event, id: Utils.generateId(), date });
+                        if (mode === 'copy') StateManager.addEvent({ ...event, id: Utils.generateId(), date });
+                        else event.date = date;
                         CloudAPI.syncToCloud();
+                        App.render();
                     }
-                } else if (s.selectMode === 'move' && s.selectedEventId) {
-                    const event = StateManager.findEvent(s.selectedEventId);
-                    if (event) {
-                        event.date = date;
+                } else if (mode === 'template') {
+                    const template = StateManager.findTemplate(data);
+                    if (template) {
+                        const newEvent = {
+                            id: Utils.generateId(),
+                            date: date,
+                            title: template.title,
+                            memberId: template.memberId,
+                            isAllDay: template.isAllDay,
+                            startTime: template.isAllDay ? '' : (template.startTime || '09:00'),
+                            endTime: template.isAllDay ? '' : (template.endTime || '10:00'),
+                            startDate: template.isAllDay ? date : '',
+                            endDate: template.isAllDay ? date : '',
+                            memo: template.memo || ''
+                        };
+                        StateManager.addEvent(newEvent);
                         CloudAPI.syncToCloud();
+                        App.render();
                     }
                 }
-                this.cancel();
+                if (mode !== 'copy') {
+                    SelectMode.cancel();
+                }
             }
         };
         // ============================================================
@@ -699,6 +827,46 @@
             calendarHeader() {
                 const s = StateManager.state;
                 const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
+                // フィルターボタンのテキスト生成
+                let filterText = '全員表示';
+                if (s.filterMembers.length > 0) {
+                    filterText = `${s.filterMembers.length}人選択中`;
+                }
+                // フィルターメニューの内容生成
+                let menuHtml = '';
+                // 全員表示オプション
+                menuHtml += `
+                    <div onclick="App.toggleFilter('all')" class="px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between ${s.filterMembers.length === 0 ? 'text-primary-600 font-bold bg-primary-50' : 'text-slate-700'}">
+                        <span>全員表示</span>
+                        ${s.filterMembers.length === 0 ? '<span>✓</span>' : ''}
+                    </div>
+                    <div class="border-t border-slate-100 my-1"></div>
+                `;
+                // メンバーリスト（固定＋追加）
+                // 固定メンバー
+                Object.entries(Config.MEMBER_COLORS).forEach(([id, info]) => {
+                    const isSelected = s.filterMembers.includes(id);
+                    menuHtml += `
+                        <div onclick="App.toggleFilter('${id}')" class="px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center gap-3">
+                            <div class="w-4 h-4 rounded-full flex items-center justify-center border ${isSelected ? 'bg-primary-500 border-primary-500' : 'border-slate-300'}">
+                                ${isSelected ? '<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"/></svg>' : ''}
+                            </div>
+                            <span class="text-slate-700">${info.name}</span>
+                        </div>
+                    `;
+                });
+                // 追加メンバー
+                s.members.forEach(mem => {
+                    const isSelected = s.filterMembers.includes(mem.id);
+                    menuHtml += `
+                        <div onclick="App.toggleFilter('${mem.id}')" class="px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center gap-3">
+                            <div class="w-4 h-4 rounded-full flex items-center justify-center border ${isSelected ? 'bg-primary-500 border-primary-500' : 'border-slate-300'}">
+                                ${isSelected ? '<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7"/></svg>' : ''}
+                            </div>
+                            <span class="text-slate-700">${mem.name}</span>
+                        </div>
+                    `;
+                });
                 return `
                 <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap items-center justify-between gap-3 border border-slate-200">
                     <div class="flex items-center gap-2">
@@ -710,14 +878,26 @@
                             <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                         </button>
                     </div>
-                    <div class="flex gap-2 items-center flex-wrap">
-                        <select id="filterSelect" onchange="App.setFilter(this.value)" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500">
-                            <option value="all" ${s.filterMember === 'all' ? 'selected' : ''}>全員表示</option>
-                            ${Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
-                    `<option value="${id}" ${s.filterMember === id ? 'selected' : ''}>${info.name}</option>`
-                ).join('')}
-                        </select>
+                    <div class="flex gap-2 items-center flex-wrap relative">
+                        <!-- フィルターボタン -->
+                        <div class="relative">
+                            <button onclick="App.toggleFilterMenu()" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:bg-slate-50 flex items-center gap-2 min-w-[100px] justify-between">
+                                <span class="truncate max-w-[120px]">${filterText}</span>
+                                <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <!-- ドロップダウンメニュー -->
+                            ${s.isFilterMenuOpen ? `
+                            <div id="filterMenu" class="absolute top-full right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden py-1 max-h-80 overflow-y-auto">
+                                ${menuHtml}
+                            </div>
+                            <div class="fixed inset-0 z-40" onclick="App.toggleFilterMenu()"></div>
+                            ` : ''}
+                        </div>
                         <button onclick="App.goToday()" class="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 transition">今日</button>
+                        <label class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm transition hidden md:flex items-center gap-1 cursor-pointer">
+                            <input type="file" accept=".ics" onchange="App.importICS(this.files[0])" class="hidden">
+                            📅 インポート
+                        </label>
                         <button onclick="App.exportToGoogle()" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm transition hidden md:block">📅 エクスポート</button>
                     </div>
                 </div>`;
@@ -743,13 +923,37 @@
                         <div class="font-medium text-sm text-slate-800 truncate">${e.title}</div>
                     </div>`;
                 }).join('') : '<p class="text-sm text-slate-400 text-center py-4">予定なし</p>';
-                // 凡例
-                const legendHtml = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
+                // 凡例（固定メンバー＋追加メンバー）
+                let legendHtml = Object.entries(Config.MEMBER_COLORS).map(([id, info]) =>
                     `<div class="flex items-center gap-2">
                         <span class="w-3 h-3 rounded-full" style="background-color: ${info.color}"></span>
                         <span class="text-xs text-slate-600">${info.name}</span>
                     </div>`
                 ).join('');
+                // 追加メンバーも凡例に追加
+                s.members.forEach(m => {
+                    legendHtml += `<div class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 rounded p-1 -m-1" onclick="App.editMember('${m.id}')">
+                        <span class="w-3 h-3 rounded-full" style="background-color: ${m.color}"></span>
+                        <span class="text-xs text-slate-600">${m.name}</span>
+                    </div>`;
+                });
+                // テンプレート一覧
+                const templatesHtml = s.templates.length > 0 ? s.templates.map(t => {
+                    const style = Utils.getMemberStyle(t.memberId);
+                    return `
+                    <div class="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${style.color}"></span>
+                                <span class="text-sm text-slate-700 truncate">${t.title}</span>
+                            </div>
+                            <div class="flex gap-1 flex-shrink-0">
+                                <button onclick="App.useTemplate('${t.id}')" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">入力</button>
+                                <button onclick="App.editTemplate('${t.id}')" class="text-xs text-slate-500 hover:text-slate-700">編集</button>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('') : '<p class="text-sm text-slate-400 text-center py-2">テンプレートなし</p>';
                 return `
                 <div class="space-y-4">
                     <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
@@ -760,16 +964,23 @@
                         <div class="space-y-2">${upcomingHtml}</div>
                     </div>
                     <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
-                        <h3 class="font-bold text-slate-800 mb-3">カラー凡例</h3>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-slate-800">📋 テンプレート</h3>
+                            <button onclick="App.openAddTemplate()" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">+ 追加</button>
+                        </div>
+                        <div class="space-y-2">${templatesHtml}</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-slate-800">カラー凡例</h3>
+                            ${s.isAdmin ? '<button onclick="App.openAddMember()" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">+ メンバー</button>' : ''}
+                        </div>
                         <div class="grid grid-cols-2 gap-2">${legendHtml}</div>
                     </div>
                     ${s.isAdmin ? `
                     <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
                         <h3 class="font-bold text-slate-800 mb-3">管理</h3>
                         <div class="space-y-2">
-                            <button onclick="App.openAddMember()" class="w-full bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg text-sm transition">
-                                👤 メンバー追加
-                            </button>
                             <button onclick="App.showSettings()" class="w-full bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg text-sm transition">
                                 ⚙️ 設定
                             </button>
@@ -896,7 +1107,26 @@
             nextMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() + 1); this.render(); },
             goToday() { StateManager.state.currentDate = new Date(); this.render(); },
             toggleSidebar() { StateManager.state.showSidebar = !StateManager.state.showSidebar; this.render(); },
-            setFilter(value) { StateManager.state.filterMember = value; UIRenderer.updateCalendarOnly(); },
+            toggleFilterMenu() {
+                StateManager.state.isFilterMenuOpen = !StateManager.state.isFilterMenuOpen;
+                this.render();
+            },
+            toggleFilter(memberId) {
+                const s = StateManager.state;
+                if (memberId === 'all') {
+                    s.filterMembers = []; // 全員表示（リセット）
+                    s.isFilterMenuOpen = false; // 全員表示選択時は閉じる
+                } else {
+                    const idx = s.filterMembers.indexOf(memberId);
+                    if (idx === -1) {
+                        s.filterMembers.push(memberId);
+                    } else {
+                        s.filterMembers.splice(idx, 1);
+                    }
+                    if (s.filterMembers.length === 0) s.isFilterMenuOpen = false;
+                }
+                this.render();
+            },
             // Admin
             openAdminLogin() {
                 ModalManager.show('管理者ログイン', `
@@ -971,16 +1201,21 @@
                     form.endTime.value = Utils.addHour(el.value);
                 }
             },
-            toggleAllDay(checkbox, isEdit) {
-                const suffix = isEdit ? 'Edit' : '';
+            toggleAllDay(checkbox, isEdit, prefix = '') {
+                const suffix = prefix + (isEdit ? 'Edit' : '');
                 const dateInputs = document.getElementById('dateInputs' + suffix);
                 const timeInputs = document.getElementById('timeInputs' + suffix);
-                if (checkbox.checked) {
-                    dateInputs.style.display = 'grid';
-                    timeInputs.style.display = 'none';
-                } else {
-                    dateInputs.style.display = 'none';
-                    timeInputs.style.display = 'grid';
+                if (dateInputs && timeInputs) {
+                    if (checkbox.checked) {
+                        if (dateInputs) dateInputs.style.display = 'grid';
+                        timeInputs.style.display = 'none';
+                    } else {
+                        if (dateInputs) dateInputs.style.display = 'none';
+                        timeInputs.style.display = 'grid';
+                    }
+                } else if (timeInputs) {
+                    // テンプレートの場合はdateInputsがない
+                    timeInputs.style.display = checkbox.checked ? 'none' : 'grid';
                 }
             },
             // Members
@@ -997,7 +1232,7 @@
                 const data = {
                     id: id || Utils.generateId(),
                     name: form.name.value,
-                    colorId: form.colorId.value
+                    color: form.color.value
                 };
                 if (id) StateManager.updateMember(id, data);
                 else StateManager.addMember(data);
@@ -1006,11 +1241,57 @@
                 this.render();
             },
             deleteMember(id) {
-                if (confirm('このメンバーを削除しますか？')) {
+                if (confirm('このメンバーを削除しますか？\\n※このメンバーの予定も更新が必要になる場合があります。')) {
+                    // フィルターに含まれていれば削除
+                    const s = StateManager.state;
+                    if (s.filterMembers.includes(id)) {
+                        s.filterMembers = s.filterMembers.filter(mId => mId !== id);
+                    }
                     StateManager.deleteMember(id);
                     CloudAPI.syncToCloud();
+                    ModalManager.close();
                     this.render();
                 }
+            },
+            // Templates
+            openAddTemplate() {
+                ModalManager.show('テンプレート追加', FormBuilder.templateForm());
+            },
+            editTemplate(id) {
+                const template = StateManager.findTemplate(id);
+                if (template) ModalManager.show('テンプレート編集', FormBuilder.templateForm(template));
+            },
+            saveTemplate(e, id) {
+                e.preventDefault();
+                const form = e.target;
+                const isAllDay = form.isAllDay.checked;
+                const data = {
+                    id: id || Utils.generateId(),
+                    title: form.title.value,
+                    memberId: form.memberId.value,
+                    isAllDay: isAllDay,
+                    startTime: isAllDay ? '' : form.startTime.value,
+                    endTime: isAllDay ? '' : form.endTime.value,
+                    memo: form.memo.value
+                };
+                if (id) StateManager.updateTemplate(id, data);
+                else StateManager.addTemplate(data);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+            },
+            deleteTemplate(id) {
+                if (confirm('このテンプレートを削除しますか？')) {
+                    StateManager.deleteTemplate(id);
+                    CloudAPI.syncToCloud();
+                    ModalManager.close();
+                    this.render();
+                }
+            },
+            useTemplate(id) {
+                const template = StateManager.findTemplate(id);
+                if (!template) return;
+                SelectMode.start('template', id);
             },
             // Settings
             showSettings() {
@@ -1066,6 +1347,126 @@
                 a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
                 a.download = `family_calendar_${y}${String(m + 1).padStart(2, '0')}.ics`;
                 a.click();
+            },
+            // Import ICS
+            async importICS(file) {
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    const events = this.parseICS(text);
+                    if (events.length === 0) {
+                        alert('インポートできる予定が見つかりませんでした');
+                        return;
+                    }
+                    // 一時的にイベントを保存
+                    StateManager.state.pendingImport = events;
+                    // メンバー選択モーダルを表示
+                    ModalManager.show(`${events.length}件の予定をインポート`, `
+                        <div class="space-y-4">
+                            <p class="text-sm text-slate-600">インポートする予定の担当者を選択してください</p>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">誰の予定？</label>
+                                ${FormBuilder.memberSelect('importMemberId', 'family')}
+                            </div>
+                            <div class="flex gap-2 justify-end">
+                                <button onclick="ModalManager.close(); StateManager.state.pendingImport = null;" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                                <button onclick="App.executeImport()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">インポート実行</button>
+                            </div>
+                        </div>`);
+                } catch (e) {
+                    console.error('ICS import error:', e);
+                    alert('ICSファイルの読み込みに失敗しました');
+                }
+            },
+            executeImport() {
+                const events = StateManager.state.pendingImport;
+                if (!events || events.length === 0) return;
+                const memberSelect = document.querySelector('[name="importMemberId"]');
+                const memberId = memberSelect ? memberSelect.value : 'family';
+                // メンバーIDを設定して追加
+                events.forEach(e => {
+                    e.memberId = memberId;
+                    StateManager.addEvent(e);
+                });
+                StateManager.state.pendingImport = null;
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+                alert(`${events.length}件の予定をインポートしました`);
+            },
+            parseICS(text) {
+                const events = [];
+                const lines = text.replace(/\r\n /g, '').split(/\r\n|\n|\r/);
+                let currentEvent = null;
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (line === 'BEGIN:VEVENT') {
+                        currentEvent = {};
+                    } else if (line === 'END:VEVENT' && currentEvent) {
+                        // イベントを追加
+                        if (currentEvent.title && (currentEvent.date || currentEvent.startDate)) {
+                            const eventDate = currentEvent.date || currentEvent.startDate;
+                            const newEvent = {
+                                id: Utils.generateId(),
+                                date: eventDate,
+                                title: currentEvent.title,
+                                memberId: 'family',
+                                isAllDay: currentEvent.isAllDay || false,
+                                startTime: currentEvent.startTime || '',
+                                endTime: currentEvent.endTime || '',
+                                startDate: currentEvent.isAllDay ? eventDate : '',
+                                endDate: currentEvent.isAllDay ? (currentEvent.endDate || eventDate) : '',
+                                memo: currentEvent.description || ''
+                            };
+                            events.push(newEvent);
+                        }
+                        currentEvent = null;
+                    } else if (currentEvent) {
+                        // プロパティをパース
+                        if (line.startsWith('SUMMARY:')) {
+                            currentEvent.title = line.substring(8);
+                        } else if (line.startsWith('DESCRIPTION:')) {
+                            currentEvent.description = line.substring(12).replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+                        } else if (line.startsWith('DTSTART;VALUE=DATE:')) {
+                            // 終日イベント
+                            const dateStr = line.substring(19);
+                            currentEvent.date = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+                            currentEvent.startDate = currentEvent.date;
+                            currentEvent.isAllDay = true;
+                        } else if (line.startsWith('DTEND;VALUE=DATE:')) {
+                            const dateStr = line.substring(17);
+                            // ICSの終日イベントはDTENDが次の日なので1日引く
+                            const d = new Date(parseInt(dateStr.substring(0, 4)), parseInt(dateStr.substring(4, 6)) - 1, parseInt(dateStr.substring(6, 8)));
+                            d.setDate(d.getDate() - 1);
+                            currentEvent.endDate = Utils.formatDate(d);
+                        } else if (line.startsWith('DTSTART:')) {
+                            // 時間指定イベント（ローカル）
+                            const dtStr = line.substring(8);
+                            if (dtStr.length >= 15) {
+                                currentEvent.date = `${dtStr.substring(0, 4)}-${dtStr.substring(4, 6)}-${dtStr.substring(6, 8)}`;
+                                currentEvent.startTime = `${dtStr.substring(9, 11)}:${dtStr.substring(11, 13)}`;
+                            }
+                        } else if (line.startsWith('DTEND:')) {
+                            const dtStr = line.substring(6);
+                            if (dtStr.length >= 15) {
+                                currentEvent.endTime = `${dtStr.substring(9, 11)}:${dtStr.substring(11, 13)}`;
+                            }
+                        } else if (line.match(/^DTSTART;TZID=[^:]+:/)) {
+                            // タイムゾーン付き
+                            const dtStr = line.split(':')[1];
+                            if (dtStr && dtStr.length >= 15) {
+                                currentEvent.date = `${dtStr.substring(0, 4)}-${dtStr.substring(4, 6)}-${dtStr.substring(6, 8)}`;
+                                currentEvent.startTime = `${dtStr.substring(9, 11)}:${dtStr.substring(11, 13)}`;
+                            }
+                        } else if (line.match(/^DTEND;TZID=[^:]+:/)) {
+                            const dtStr = line.split(':')[1];
+                            if (dtStr && dtStr.length >= 15) {
+                                currentEvent.endTime = `${dtStr.substring(9, 11)}:${dtStr.substring(11, 13)}`;
+                            }
+                        }
+                    }
+                }
+                return events;
             }
         };
         // Initialize
