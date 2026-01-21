@@ -359,29 +359,36 @@
 
             async syncFromCloud() {
                 const s = StateManager.state;
+                // pendingSync中（ローカル変更をクラウドに送信中）のみスキップ
                 if (!s.config || s.syncing || s.pendingSync) return;
+                s.syncing = true;
                 try {
                     const data = await this.readBin();
-                    if (data && !s.pendingSync) {
-                        // クラウドのデータがローカルより新しい場合のみ更新
+                    if (data) {
                         const cloudUpdatedAt = data.updatedAt || 0;
-                        if (cloudUpdatedAt > s.localUpdatedAt) {
+                        // クラウドのデータがローカルより新しい場合、または初回読み込み時
+                        if (cloudUpdatedAt > s.localUpdatedAt || s.localUpdatedAt === 0) {
                             s.events = data.events || [];
                             s.localUpdatedAt = cloudUpdatedAt;
-                            StateManager.saveEvents();
-                            s.lastSync = new Date();
-                            console.log('Synced from cloud:', s.events.length, 'events');
+                            // ローカルストレージも更新
+                            localStorage.setItem(StateManager.EVENTS_KEY, JSON.stringify({
+                                events: s.events,
+                                updatedAt: s.localUpdatedAt
+                            }));
+                            console.log('Synced from cloud:', s.events.length, 'events, updatedAt:', cloudUpdatedAt);
                             const activeEl = document.activeElement;
                             if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
                                 UIRenderer.updateCalendarOnly();
                             } else {
                                 App.render();
                             }
-                        } else {
-                            s.lastSync = new Date();
                         }
+                        s.lastSync = new Date();
                     }
-                } catch (e) { console.error('Fetch error:', e); }
+                } catch (e) {
+                    console.error('Fetch error:', e);
+                }
+                s.syncing = false;
             }
         };
 
