@@ -78,22 +78,6 @@
         .drag-over {
             background-color: rgba(59, 130, 246, 0.2);
         }
-
-        .sync-indicator {
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
     </style>
 </head>
 
@@ -102,12 +86,13 @@
 
     <script>
         // ============================================================
-        // Config Module
+        // Config
         // ============================================================
         const Config = {
             API_URL: 'https://api.jsonbin.io/v3/b',
             SYNC_INTERVAL: 5000,
-            STORAGE_KEY: 'familyCalendarConfig',
+            CONFIG_KEY: 'familyCalendarConfig',
+            EVENTS_KEY: 'familyCalendarEvents',
             CATEGORIES: [
                 { id: 'otou', name: 'おとうー', color: 'otou' },
                 { id: 'mama', name: 'まま', color: 'mama' },
@@ -117,66 +102,51 @@
         };
 
         // ============================================================
-        // Utils Module
+        // State (グローバル状態)
+        // ============================================================
+        const state = {
+            currentDate: new Date(),
+            events: [],
+            config: null,
+            filterCategory: null,
+            selectMode: null,
+            selectedEventId: null,
+            lastSync: null,
+            syncStatus: 'idle' // 'idle', 'syncing', 'error', 'success'
+        };
+
+        // ============================================================
+        // Utils
         // ============================================================
         const Utils = {
             formatDate: (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             generateId: () => Date.now().toString(36) + Math.random().toString(36).substr(2),
 
-            _timeOptionsCache: null,
             getTimeOptions() {
-                if (!this._timeOptionsCache) {
-                    this._timeOptionsCache = [];
-                    for (let h = 0; h <= 23; h++) {
-                        for (let m = 0; m < 60; m += 30) {
-                            this._timeOptionsCache.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-                        }
+                const opts = [];
+                for (let h = 0; h <= 23; h++) {
+                    for (let m = 0; m < 60; m += 30) {
+                        opts.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
                     }
                 }
-                return this._timeOptionsCache;
+                return opts;
             },
 
-            _holidayMap: null,
-            getHolidayMap() {
-                if (!this._holidayMap) {
-                    this._holidayMap = new Map([
-                        ['2024-01-01', '元日'], ['2024-01-08', '成人の日'], ['2024-02-11', '建国記念の日'], ['2024-02-12', '振替休日'],
-                        ['2024-02-23', '天皇誕生日'], ['2024-03-20', '春分の日'], ['2024-04-29', '昭和の日'], ['2024-05-03', '憲法記念日'],
-                        ['2024-05-04', 'みどりの日'], ['2024-05-05', 'こどもの日'], ['2024-05-06', '振替休日'], ['2024-07-15', '海の日'],
-                        ['2024-08-11', '山の日'], ['2024-08-12', '振替休日'], ['2024-09-16', '敬老の日'], ['2024-09-22', '秋分の日'],
-                        ['2024-09-23', '振替休日'], ['2024-10-14', 'スポーツの日'], ['2024-11-03', '文化の日'], ['2024-11-04', '振替休日'],
-                        ['2024-11-23', '勤労感謝の日'], ['2025-01-01', '元日'], ['2025-01-13', '成人の日'], ['2025-02-11', '建国記念の日'],
-                        ['2025-02-23', '天皇誕生日'], ['2025-02-24', '振替休日'], ['2025-03-20', '春分の日'], ['2025-04-29', '昭和の日'],
-                        ['2025-05-03', '憲法記念日'], ['2025-05-04', 'みどりの日'], ['2025-05-05', 'こどもの日'], ['2025-05-06', '振替休日'],
-                        ['2025-07-21', '海の日'], ['2025-08-11', '山の日'], ['2025-09-15', '敬老の日'], ['2025-09-23', '秋分の日'],
-                        ['2025-10-13', 'スポーツの日'], ['2025-11-03', '文化の日'], ['2025-11-23', '勤労感謝の日'], ['2025-11-24', '振替休日'],
-                        ['2026-01-01', '元日'], ['2026-01-12', '成人の日'], ['2026-02-11', '建国記念の日'], ['2026-02-23', '天皇誕生日'],
-                        ['2026-03-20', '春分の日'], ['2026-04-29', '昭和の日'], ['2026-05-03', '憲法記念日'], ['2026-05-04', 'みどりの日'],
-                        ['2026-05-05', 'こどもの日'], ['2026-05-06', '振替休日'], ['2026-07-20', '海の日'], ['2026-08-11', '山の日'],
-                        ['2026-09-21', '敬老の日'], ['2026-09-22', '国民の休日'], ['2026-09-23', '秋分の日'], ['2026-10-12', 'スポーツの日'],
-                        ['2026-11-03', '文化の日'], ['2026-11-23', '勤労感謝の日'], ['2027-01-01', '元日'], ['2027-01-11', '成人の日'],
-                        ['2027-02-11', '建国記念の日'], ['2027-02-23', '天皇誕生日'], ['2027-03-21', '春分の日'], ['2027-03-22', '振替休日'],
-                        ['2027-04-29', '昭和の日'], ['2027-05-03', '憲法記念日'], ['2027-05-04', 'みどりの日'], ['2027-05-05', 'こどもの日'],
-                        ['2027-07-19', '海の日'], ['2027-08-11', '山の日'], ['2027-09-20', '敬老の日'], ['2027-09-23', '秋分の日'],
-                        ['2027-10-11', 'スポーツの日'], ['2027-11-03', '文化の日'], ['2027-11-23', '勤労感謝の日']
-                    ]);
-                }
-                return this._holidayMap;
-            },
-
-            getHoliday(dateStr) {
-                return this.getHolidayMap().get(dateStr);
+            holidays: {
+                '2026-01-01': '元日', '2026-01-12': '成人の日', '2026-02-11': '建国記念の日', '2026-02-23': '天皇誕生日',
+                '2026-03-20': '春分の日', '2026-04-29': '昭和の日', '2026-05-03': '憲法記念日', '2026-05-04': 'みどりの日',
+                '2026-05-05': 'こどもの日', '2026-05-06': '振替休日', '2026-07-20': '海の日', '2026-08-11': '山の日',
+                '2026-09-21': '敬老の日', '2026-09-22': '国民の休日', '2026-09-23': '秋分の日', '2026-10-12': 'スポーツの日',
+                '2026-11-03': '文化の日', '2026-11-23': '勤労感謝の日'
             },
 
             getCalendarDays(year, month) {
                 const first = new Date(year, month, 1);
                 const last = new Date(year, month + 1, 0);
                 const days = [];
-                const startDay = first.getDay();
-                for (let i = startDay - 1; i >= 0; i--) days.push({ date: new Date(year, month, -i), current: false });
+                for (let i = first.getDay() - 1; i >= 0; i--) days.push({ date: new Date(year, month, -i), current: false });
                 for (let i = 1; i <= last.getDate(); i++) days.push({ date: new Date(year, month, i), current: true });
-                const remaining = 42 - days.length;
-                for (let i = 1; i <= remaining; i++) days.push({ date: new Date(year, month + 1, i), current: false });
+                while (days.length < 42) days.push({ date: new Date(year, month + 1, days.length - last.getDate() - first.getDay() + 1), current: false });
                 return days;
             },
 
@@ -184,36 +154,22 @@
                 return Config.CATEGORIES.find(c => c.id === id) || Config.CATEGORIES[0];
             },
 
-            parseICS(icsText) {
+            parseICS(text) {
                 const events = [];
-                const lines = icsText.replace(/\r\n /g, '').split(/\r\n|\n|\r/);
-                let currentEvent = null;
-
+                const lines = text.replace(/\r\n /g, '').split(/\r\n|\n|\r/);
+                let ev = null;
                 for (const line of lines) {
-                    if (line === 'BEGIN:VEVENT') {
-                        currentEvent = { id: Utils.generateId(), category: 'otou', memo: '' };
-                    } else if (line === 'END:VEVENT' && currentEvent) {
-                        if (currentEvent.date && currentEvent.title) {
-                            events.push(currentEvent);
-                        }
-                        currentEvent = null;
-                    } else if (currentEvent) {
+                    if (line === 'BEGIN:VEVENT') ev = { id: this.generateId(), category: 'otou', memo: '' };
+                    else if (line === 'END:VEVENT' && ev && ev.date && ev.title) { events.push(ev); ev = null; }
+                    else if (ev) {
                         if (line.startsWith('DTSTART')) {
-                            const match = line.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
-                            if (match) {
-                                currentEvent.date = `${match[1]}-${match[2]}-${match[3]}`;
-                                currentEvent.startTime = match[4] && match[5] ? `${match[4]}:${match[5]}` : '09:00';
-                            }
+                            const m = line.match(/(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
+                            if (m) { ev.date = `${m[1]}-${m[2]}-${m[3]}`; ev.startTime = m[4] && m[5] ? `${m[4]}:${m[5]}` : '09:00'; }
                         } else if (line.startsWith('DTEND')) {
-                            const match = line.match(/T(\d{2})(\d{2})/);
-                            if (match) {
-                                currentEvent.endTime = `${match[1]}:${match[2]}`;
-                            }
-                        } else if (line.startsWith('SUMMARY:')) {
-                            currentEvent.title = line.substring(8);
-                        } else if (line.startsWith('DESCRIPTION:')) {
-                            currentEvent.memo = line.substring(12);
-                        }
+                            const m = line.match(/T(\d{2})(\d{2})/);
+                            if (m) ev.endTime = `${m[1]}:${m[2]}`;
+                        } else if (line.startsWith('SUMMARY:')) ev.title = line.substring(8);
+                        else if (line.startsWith('DESCRIPTION:')) ev.memo = line.substring(12);
                     }
                 }
                 return events;
@@ -221,482 +177,172 @@
         };
 
         // ============================================================
-        // StateManager Module
+        // Storage (ローカル保存)
         // ============================================================
-        const StateManager = {
-            EVENTS_KEY: 'familyCalendarEvents',
-
-            state: {
-                currentDate: new Date(),
-                events: [],
-                syncing: false,
-                pendingSync: false,
-                lastSync: null,
-                config: JSON.parse(localStorage.getItem(Config.STORAGE_KEY) || 'null'),
-                selectMode: null,
-                selectedEventId: null,
-                filterCategory: null,
-                localUpdatedAt: 0
+        const Storage = {
+            loadConfig() {
+                try { state.config = JSON.parse(localStorage.getItem(Config.CONFIG_KEY)); } catch (e) { state.config = null; }
             },
-
-            init() {
-                // ローカルストレージからイベントを読み込む
-                const saved = localStorage.getItem(this.EVENTS_KEY);
-                if (saved) {
-                    try {
-                        const data = JSON.parse(saved);
-                        this.state.events = data.events || [];
-                        this.state.localUpdatedAt = data.updatedAt || 0;
-                    } catch (e) { console.error('Failed to load events:', e); }
-                }
-            },
-
-            saveEvents() {
-                // ローカルストレージにイベントを保存
-                this.state.localUpdatedAt = Date.now();
-                localStorage.setItem(this.EVENTS_KEY, JSON.stringify({
-                    events: this.state.events,
-                    updatedAt: this.state.localUpdatedAt
-                }));
-            },
-
             saveConfig() {
-                localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this.state.config));
+                localStorage.setItem(Config.CONFIG_KEY, JSON.stringify(state.config));
             },
-
-            resetConfig() {
-                localStorage.removeItem(Config.STORAGE_KEY);
-                this.state.config = null;
+            loadEvents() {
+                try {
+                    const data = JSON.parse(localStorage.getItem(Config.EVENTS_KEY));
+                    if (data && data.events) state.events = data.events;
+                } catch (e) { }
             },
-
-            findEvent(id) {
-                return this.state.events.find(e => e.id === id);
+            saveEvents() {
+                localStorage.setItem(Config.EVENTS_KEY, JSON.stringify({ events: state.events, savedAt: Date.now() }));
             },
-
-            addEvent(event) {
-                this.state.events.push(event);
-                this.saveEvents();
-            },
-
-            updateEvent(id, data) {
-                const idx = this.state.events.findIndex(e => e.id === id);
-                if (idx !== -1) {
-                    this.state.events[idx] = data;
-                    this.saveEvents();
-                }
-            },
-
-            deleteEvent(id) {
-                this.state.events = this.state.events.filter(e => e.id !== id);
-                this.saveEvents();
-            },
-
-            getFilteredEvents() {
-                if (!this.state.filterCategory) return this.state.events;
-                return this.state.events.filter(e => e.category === this.state.filterCategory);
+            reset() {
+                localStorage.removeItem(Config.CONFIG_KEY);
+                localStorage.removeItem(Config.EVENTS_KEY);
+                state.config = null;
+                state.events = [];
             }
         };
 
         // ============================================================
-        // CloudAPI Module (JSONBin.io)
+        // CloudAPI (JSONBin.io)
         // ============================================================
         const CloudAPI = {
-            async createBin(apiKey, keyType, data) {
-                const headerKey = keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
+            getHeader() {
+                if (!state.config) return {};
+                const key = state.config.keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
+                return { [key]: state.config.apiKey, 'Content-Type': 'application/json' };
+            },
+
+            async createBin(apiKey, keyType) {
+                const key = keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
                 const res = await fetch(Config.API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', [headerKey]: apiKey, 'X-Bin-Private': 'false' },
-                    body: JSON.stringify(data)
+                    headers: { [key]: apiKey, 'Content-Type': 'application/json', 'X-Bin-Private': 'false' },
+                    body: JSON.stringify({ events: [], updatedAt: Date.now() })
                 });
+                if (!res.ok) throw new Error('Bin作成失敗');
                 const json = await res.json();
-                if (!res.ok) throw new Error(json.message || 'Bin作成に失敗しました');
                 return json.metadata.id;
             },
 
-            async updateBin(data) {
-                const { config } = StateManager.state;
-                if (!config) return;
-                const headerKey = config.keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
-                const res = await fetch(`${Config.API_URL}/${config.binId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', [headerKey]: config.apiKey },
-                    body: JSON.stringify(data)
-                });
-                if (!res.ok) {
+            async save() {
+                if (!state.config) return false;
+                state.syncStatus = 'syncing';
+                updateSyncIndicator();
+                try {
+                    const res = await fetch(`${Config.API_URL}/${state.config.binId}`, {
+                        method: 'PUT',
+                        headers: this.getHeader(),
+                        body: JSON.stringify({ events: state.events, updatedAt: Date.now() })
+                    });
+                    if (!res.ok) throw new Error('保存失敗');
+                    state.syncStatus = 'success';
+                    state.lastSync = new Date();
+                    console.log('Cloud save OK:', state.events.length, 'events');
+                    return true;
+                } catch (e) {
+                    console.error('Cloud save error:', e);
+                    state.syncStatus = 'error';
+                    return false;
+                } finally {
+                    updateSyncIndicator();
+                }
+            },
+
+            async load() {
+                if (!state.config) return false;
+                state.syncStatus = 'syncing';
+                updateSyncIndicator();
+                try {
+                    const res = await fetch(`${Config.API_URL}/${state.config.binId}/latest`, {
+                        headers: this.getHeader()
+                    });
+                    if (!res.ok) throw new Error('読み込み失敗');
                     const json = await res.json();
-                    throw new Error(json.message || '保存に失敗しました');
-                }
-            },
-
-            async readBin() {
-                const { config } = StateManager.state;
-                if (!config) return null;
-                const headerKey = config.keyType === 'access' ? 'X-Access-Key' : 'X-Master-Key';
-                const res = await fetch(`${Config.API_URL}/${config.binId}/latest`, {
-                    headers: { [headerKey]: config.apiKey }
-                });
-                const json = await res.json();
-                return json.record;
-            },
-
-            async syncToCloud() {
-                const s = StateManager.state;
-                if (!s.config || s.syncing) return;
-                s.syncing = true;
-                s.pendingSync = true;
-                try {
-                    await this.updateBin({ events: s.events, updatedAt: s.localUpdatedAt });
-                    s.lastSync = new Date();
-                    console.log('Synced to cloud:', s.events.length, 'events');
+                    if (json.record && json.record.events) {
+                        state.events = json.record.events;
+                        Storage.saveEvents();
+                        console.log('Cloud load OK:', state.events.length, 'events');
+                    }
+                    state.syncStatus = 'success';
+                    state.lastSync = new Date();
+                    return true;
                 } catch (e) {
-                    console.error('Sync error:', e);
-                    // エラーでもローカルには保存されているので大丈夫
+                    console.error('Cloud load error:', e);
+                    state.syncStatus = 'error';
+                    return false;
+                } finally {
+                    updateSyncIndicator();
+                    renderCalendar();
                 }
-                s.pendingSync = false;
-                s.syncing = false;
-                App.render();
-            },
-
-            async syncFromCloud() {
-                const s = StateManager.state;
-                // pendingSync中（ローカル変更をクラウドに送信中）のみスキップ
-                if (!s.config || s.syncing || s.pendingSync) return;
-                s.syncing = true;
-                try {
-                    const data = await this.readBin();
-                    if (data) {
-                        const cloudUpdatedAt = data.updatedAt || 0;
-                        // クラウドのデータがローカルより新しい場合、または初回読み込み時
-                        if (cloudUpdatedAt > s.localUpdatedAt || s.localUpdatedAt === 0) {
-                            s.events = data.events || [];
-                            s.localUpdatedAt = cloudUpdatedAt;
-                            // ローカルストレージも更新
-                            localStorage.setItem(StateManager.EVENTS_KEY, JSON.stringify({
-                                events: s.events,
-                                updatedAt: s.localUpdatedAt
-                            }));
-                            console.log('Synced from cloud:', s.events.length, 'events, updatedAt:', cloudUpdatedAt);
-                            const activeEl = document.activeElement;
-                            if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
-                                UIRenderer.updateCalendarOnly();
-                            } else {
-                                App.render();
-                            }
-                        }
-                        s.lastSync = new Date();
-                    }
-                } catch (e) {
-                    console.error('Fetch error:', e);
-                }
-                s.syncing = false;
             }
         };
 
         // ============================================================
-        // FormBuilder Module
+        // UI更新関数
         // ============================================================
-        const FormBuilder = {
-            timeSelect(name, selected = '', onChange = '') {
-                const options = Utils.getTimeOptions().map(t =>
-                    `<option value="${t}" ${t === selected ? 'selected' : ''}>${t}</option>`
-                ).join('');
-                return `<select name="${name}" ${onChange} class="w-full border rounded px-3 py-2">${options}</select>`;
-            },
+        function updateSyncIndicator() {
+            const el = document.getElementById('syncStatus');
+            if (!el) return;
+            const labels = { idle: '---', syncing: '同期中...', error: '同期エラー', success: '同期済' };
+            el.textContent = labels[state.syncStatus] || '---';
+            el.className = state.syncStatus === 'error' ? 'text-xs text-red-300' : 'text-xs';
+        }
 
-            categorySelect(name, selected = 'otou') {
-                const options = Config.CATEGORIES.map(c =>
-                    `<option value="${c.id}" ${selected === c.id ? 'selected' : ''}>${c.name}</option>`
-                ).join('');
-                return `<select name="${name}" class="w-full border rounded px-3 py-2">${options}</select>`;
-            },
+        function renderCalendar() {
+            const container = document.getElementById('calendarGrid');
+            if (!container) return;
 
-            eventForm(event = null, date = '') {
-                const isEdit = !!event;
-                const e = event || { title: '', startTime: '09:00', endTime: '10:00', category: 'otou', memo: '' };
-                const formDate = event ? event.date : date;
-                const formId = event ? event.id : 'null';
+            const y = state.currentDate.getFullYear(), m = state.currentDate.getMonth();
+            const days = Utils.getCalendarDays(y, m);
+            const today = Utils.formatDate(new Date());
+            const events = state.filterCategory ? state.events.filter(e => e.category === state.filterCategory) : state.events;
 
-                return `
-            <form id="eventForm" onsubmit="App.saveEvent(event, ${isEdit ? `'${formId}'` : 'null'}, '${formDate}')">
-                <div class="space-y-4">
-                    <div><label class="block text-sm font-medium mb-1">予定</label>
-                        <input type="text" name="title" value="${e.title}" required class="w-full border rounded px-3 py-2" placeholder="例: 買い物、病院"></div>
-                    <div><label class="block text-sm font-medium mb-1">誰の予定？</label>
-                        ${this.categorySelect('category', e.category)}</div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="block text-sm font-medium mb-1">開始</label>
-                            ${this.timeSelect('startTime', e.startTime)}</div>
-                        <div><label class="block text-sm font-medium mb-1">終了</label>
-                            ${this.timeSelect('endTime', e.endTime || e.startTime)}</div>
-                    </div>
-                    <div><label class="block text-sm font-medium mb-1">メモ（任意）</label>
-                        <textarea name="memo" class="w-full border rounded px-3 py-2 h-20" placeholder="詳細など...">${e.memo || ''}</textarea></div>
-                </div>
-                ${isEdit ? `
-                <div class="mt-4 p-3 bg-primary-50 rounded-lg">
-                    <p class="text-sm text-primary-700 mb-2">別の日に移動・コピー</p>
-                    <div class="flex gap-2">
-                        <button type="button" onclick="SelectMode.start('copy', '${e.id}')" class="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">コピー</button>
-                        <button type="button" onclick="SelectMode.start('move', '${e.id}')" class="flex-1 px-3 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-sm">移動</button>
-                    </div>
-                </div>` : ''}
-                <div class="mt-4 flex gap-2 justify-end">
-                    ${isEdit ? `<button type="button" onclick="App.deleteEvent('${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">削除</button>` : ''}
-                    <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border rounded hover:bg-gray-100">キャンセル</button>
-                    <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-600">保存</button>
-                </div>
-            </form>`;
-            }
-        };
-
-        // ============================================================
-        // ModalManager Module
-        // ============================================================
-        const ModalManager = {
-            show(title, content) {
-                const html = `
-            <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="ModalManager.close(event)">
-                <div class="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
-                    <h2 class="text-xl font-bold mb-4 text-primary-800">${title}</h2>
-                    ${content}
-                </div>
-            </div>`;
-                document.body.insertAdjacentHTML('beforeend', html);
-            },
-
-            close(e) {
-                if (e && e.target !== e.currentTarget) return;
-                document.querySelector('.fixed.inset-0')?.remove();
-            }
-        };
-
-        // ============================================================
-        // SelectMode Module
-        // ============================================================
-        const SelectMode = {
-            start(mode, eventId) {
-                StateManager.state.selectMode = mode;
-                StateManager.state.selectedEventId = eventId;
-                ModalManager.close();
-                App.render();
-                this.showBanner();
-            },
-
-            showBanner() {
-                document.querySelector('.copy-mode-banner')?.remove();
-                const messages = { copy: '日付をタップしてコピー先を選択', move: '日付をタップして移動先を選択' };
-                const banner = document.createElement('div');
-                banner.className = 'copy-mode-banner';
-                banner.innerHTML = `${messages[StateManager.state.selectMode]} <button onclick="SelectMode.cancel()" style="margin-left:8px; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px;">×</button>`;
-                document.body.appendChild(banner);
-                document.getElementById('app').classList.add('select-mode');
-            },
-
-            cancel() {
-                StateManager.state.selectMode = null;
-                StateManager.state.selectedEventId = null;
-                document.querySelector('.copy-mode-banner')?.remove();
-                document.getElementById('app').classList.remove('select-mode');
-                App.render();
-            },
-
-            execute(date) {
-                const s = StateManager.state;
-                if (s.selectMode === 'copy' && s.selectedEventId) {
-                    const event = StateManager.findEvent(s.selectedEventId);
-                    if (event) {
-                        StateManager.addEvent({ ...event, id: Utils.generateId(), date });
-                        CloudAPI.syncToCloud();
-                    }
-                } else if (s.selectMode === 'move' && s.selectedEventId) {
-                    const event = StateManager.findEvent(s.selectedEventId);
-                    if (event) {
-                        event.date = date;
-                        CloudAPI.syncToCloud();
-                    }
-                }
-                this.cancel();
-            }
-        };
-
-        // ============================================================
-        // DragDrop Module
-        // ============================================================
-        const DragDrop = {
-            handleStart(e, id) {
-                StateManager.state.dragData = { type: 'event', id };
-                e.dataTransfer.effectAllowed = 'copyMove';
-            },
-
-            handleOver(e) {
-                e.preventDefault();
-                e.currentTarget.classList.add('drag-over');
-            },
-
-            handleDrop(e, date) {
-                e.preventDefault();
-                e.currentTarget.classList.remove('drag-over');
-                const d = StateManager.state.dragData;
-                if (!d) return;
-
-                const mode = confirm('コピーしますか？\n（OKでコピー、キャンセルで移動）') ? 'copy' : 'move';
-                const event = StateManager.findEvent(d.id);
-                if (event) {
-                    if (mode === 'copy') StateManager.addEvent({ ...event, id: Utils.generateId(), date });
-                    else event.date = date;
-                    CloudAPI.syncToCloud();
-                    App.render();
-                }
-                StateManager.state.dragData = null;
-            },
-
-            attachListeners() {
-                document.querySelectorAll('[ondragover]').forEach(el =>
-                    el.addEventListener('dragleave', e => e.currentTarget.classList.remove('drag-over'))
-                );
-            }
-        };
-
-        // ============================================================
-        // UIRenderer Module
-        // ============================================================
-        const UIRenderer = {
-            buildCalendarCell(d, events, today) {
+            container.innerHTML = days.map(d => {
                 const dateStr = Utils.formatDate(d.date);
                 const dayEvents = events.filter(e => e.date === dateStr).sort((a, b) => a.startTime.localeCompare(b.startTime));
                 const isToday = dateStr === today;
-                const isHoliday = Utils.getHoliday(dateStr);
-                const isSunday = d.date.getDay() === 0;
-                const isSaturday = d.date.getDay() === 6;
+                const holiday = Utils.holidays[dateStr];
+                const isSun = d.date.getDay() === 0, isSat = d.date.getDay() === 6;
 
-                const eventsHtml = dayEvents.map(e => {
+                const evHtml = dayEvents.map(e => {
                     const cat = Utils.getCategoryById(e.category);
-                    return `
-                <div class="event-item p-1 rounded text-white bg-${cat.color}-500" 
-                     data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
-                    ${e.startTime} ${e.title}
-                </div>`;
+                    return `<div class="event-item p-1 rounded text-white bg-${cat.color}-500" onclick="event.stopPropagation(); openEditEvent('${e.id}')">${e.startTime} ${e.title}</div>`;
                 }).join('');
 
                 return `
-            <div class="calendar-cell border-b border-r border-primary-100 p-1 ${d.current ? 'bg-white' : 'bg-gray-50'} cursor-pointer hover:bg-primary-50" 
-                 data-date="${dateStr}" ondragover="DragDrop.handleOver(event)" ondrop="DragDrop.handleDrop(event, '${dateStr}')" onclick="App.handleCellClick('${dateStr}')">
+            <div class="calendar-cell border-b border-r border-primary-100 p-1 ${d.current ? 'bg-white' : 'bg-gray-50'} cursor-pointer hover:bg-primary-50" onclick="handleCellClick('${dateStr}')">
                 <div class="flex items-center justify-between mb-1">
-                    <span class="text-xs md:text-sm font-semibold ${isToday ? 'bg-primary-500 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''} ${isSunday || isHoliday ? 'text-red-500' : isSaturday ? 'text-blue-500' : ''}">${d.date.getDate()}</span>
-                    ${isHoliday ? `<span class="text-[9px] text-red-500 truncate hidden md:block">${isHoliday}</span>` : ''}
+                    <span class="text-xs md:text-sm font-semibold ${isToday ? 'bg-primary-500 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''} ${isSun || holiday ? 'text-red-500' : isSat ? 'text-blue-500' : ''}">${d.date.getDate()}</span>
+                    ${holiday ? `<span class="text-[9px] text-red-500 truncate hidden md:block">${holiday}</span>` : ''}
                 </div>
-                <div class="space-y-1">${eventsHtml}</div>
+                <div class="space-y-1">${evHtml}</div>
             </div>`;
-            },
+            }).join('');
 
-            calendar() {
-                const s = StateManager.state;
-                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
-                const days = Utils.getCalendarDays(y, m);
-                const today = Utils.formatDate(new Date());
-                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-                const events = StateManager.getFilteredEvents();
+            // ヘッダー更新
+            document.getElementById('monthLabel').textContent = `${y}年${m + 1}月`;
+        }
 
-                const weekdaysHtml = weekdays.map((d, i) =>
-                    `<div class="p-2 text-center font-bold text-sm ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-primary-800'}">${d}</div>`
-                ).join('');
+        function renderFilterButtons() {
+            const container = document.getElementById('filterButtons');
+            if (!container) return;
 
-                const cellsHtml = days.map(d => this.buildCalendarCell(d, events, today)).join('');
-
-                return `
-            <div class="bg-white rounded-lg shadow overflow-hidden">
-                <div class="grid grid-cols-7 bg-primary-100">${weekdaysHtml}</div>
-                <div class="grid grid-cols-7 border-t border-primary-200">${cellsHtml}</div>
-            </div>`;
-            },
-
-            calendarHeader() {
-                const s = StateManager.state;
-                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
-
-                const filterButtons = Config.CATEGORIES.map(c =>
-                    `<button onclick="App.setFilter('${c.id}')" class="px-2 py-1 rounded text-xs ${s.filterCategory === c.id ? `bg-${c.color}-500 text-white` : `bg-${c.color}-100 text-${c.color}-700`}">${c.name}</button>`
-                ).join('');
-
-                return `
-            <div class="bg-white rounded-lg shadow p-3 mb-3">
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    <div class="flex items-center gap-2">
-                        <button onclick="App.prevMonth()" class="p-2 hover:bg-primary-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg></button>
-                        <span class="text-lg font-bold text-primary-800">${y}年${m + 1}月</span>
-                        <button onclick="App.nextMonth()" class="p-2 hover:bg-primary-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></button>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="App.goToday()" class="bg-primary-100 hover:bg-primary-200 px-3 py-1 rounded text-sm text-primary-800">今日</button>
-                        <label class="bg-green-100 hover:bg-green-200 px-3 py-1 rounded text-sm text-green-800 cursor-pointer">
-                            ICS読込
-                            <input type="file" accept=".ics" onchange="App.importICS(event)" class="hidden">
-                        </label>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs text-gray-500">表示:</span>
-                    <button onclick="App.setFilter(null)" class="px-2 py-1 rounded text-xs ${!s.filterCategory ? 'bg-gray-600 text-white' : 'bg-gray-100'}">全て</button>
-                    ${filterButtons}
-                </div>
-            </div>`;
-            },
-
-            updateCalendarOnly() {
-                const container = document.querySelector('.grid.grid-cols-7.border-t');
-                if (!container) return;
-                const s = StateManager.state;
-                const y = s.currentDate.getFullYear(), m = s.currentDate.getMonth();
-                const days = Utils.getCalendarDays(y, m);
-                const today = Utils.formatDate(new Date());
-                const events = StateManager.getFilteredEvents();
-                container.innerHTML = days.map(d => this.buildCalendarCell(d, events, today)).join('');
-            }
-        };
+            const allBtn = `<button onclick="setFilter(null)" class="px-2 py-1 rounded text-xs ${!state.filterCategory ? 'bg-gray-600 text-white' : 'bg-gray-100'}">全て</button>`;
+            const catBtns = Config.CATEGORIES.map(c =>
+                `<button onclick="setFilter('${c.id}')" class="px-2 py-1 rounded text-xs ${state.filterCategory === c.id ? `bg-${c.color}-500 text-white` : `bg-${c.color}-100 text-${c.color}-700`}">${c.name}</button>`
+            ).join('');
+            container.innerHTML = allBtn + catBtns;
+        }
 
         // ============================================================
-        // App Module
+        // メイン画面レンダリング
         // ============================================================
-        const App = {
-            syncInterval: null,
+        function render() {
+            const app = document.getElementById('app');
 
-            init() {
-                StateManager.init(); // ローカルストレージからデータを読み込む
-                if (StateManager.state.config) this.startSync();
-                this.render();
-            },
-
-            startSync() {
-                if (this.syncInterval) clearInterval(this.syncInterval);
-                CloudAPI.syncFromCloud();
-                this.syncInterval = setInterval(() => CloudAPI.syncFromCloud(), Config.SYNC_INTERVAL);
-            },
-
-            render() {
-                const app = document.getElementById('app');
-                const s = StateManager.state;
-
-                if (!s.config) { app.innerHTML = this.renderSetup(); return; }
-
+            if (!state.config) {
                 app.innerHTML = `
-            <header class="bg-gradient-to-r from-primary-600 to-primary-700 text-white p-4 shadow-lg sticky top-0 z-40">
-                <div class="max-w-4xl mx-auto flex justify-between items-center">
-                    <h1 class="text-xl md:text-2xl font-bold">家族カレンダー</h1>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs ${s.syncing ? 'sync-indicator' : ''}">${s.lastSync ? '同期済' : '同期中...'}</span>
-                        <button onclick="App.resetConfig()" class="bg-primary-800 hover:bg-primary-900 px-3 py-1 rounded text-sm">設定</button>
-                    </div>
-                </div>
-            </header>
-            <main class="max-w-4xl mx-auto p-2 md:p-4">
-                ${UIRenderer.calendarHeader()}
-                ${UIRenderer.calendar()}
-            </main>`;
-                DragDrop.attachListeners();
-            },
-
-            renderSetup() {
-                return `
             <div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-primary-100 to-primary-200">
                 <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
                     <div class="text-center mb-6">
@@ -707,128 +353,237 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">API Keyの種類</label>
                             <div class="flex gap-4">
-                                <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="radio" name="keyType" value="master" checked> Master Key
-                                </label>
-                                <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                    <input type="radio" name="keyType" value="access"> Access Key
-                                </label>
+                                <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="keyType" value="master" checked> Master Key</label>
+                                <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" name="keyType" value="access"> Access Key</label>
                             </div>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">JSONBin.io APIキー</label>
-                            <input type="text" id="apiKey" placeholder="$2a$10$..." class="w-full px-4 py-3 border border-primary-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-                            <p class="text-xs text-gray-500 mt-1"><a href="https://jsonbin.io/" target="_blank" class="text-primary-600 underline">jsonbin.io</a> で無料でAPIキーを取得できます</p>
+                            <input type="text" id="apiKey" placeholder="$2a$10$..." class="w-full px-4 py-3 border rounded-lg">
+                            <p class="text-xs text-gray-500 mt-1"><a href="https://jsonbin.io/" target="_blank" class="text-primary-600 underline">jsonbin.io</a> で取得</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Bin ID（家族と共有する場合）</label>
-                            <input type="text" id="binId" placeholder="省略可能" class="w-full px-4 py-3 border border-primary-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-                            <p class="text-xs text-gray-500 mt-1">家族のBin IDを入力すると同じカレンダーを共有できます</p>
+                            <input type="text" id="binId" placeholder="省略可能" class="w-full px-4 py-3 border rounded-lg">
                         </div>
-                        <button onclick="App.setupConfig()" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-lg font-semibold transition">はじめる</button>
+                        <button onclick="setupConfig()" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-lg font-semibold">はじめる</button>
                     </div>
                 </div>
             </div>`;
-            },
-
-            async setupConfig() {
-                const apiKey = document.getElementById('apiKey').value.trim();
-                const keyType = document.querySelector('input[name="keyType"]:checked').value;
-                let binId = document.getElementById('binId').value.trim();
-                if (!apiKey) { alert('APIキーを入力してください'); return; }
-                try {
-                    if (!binId) {
-                        binId = await CloudAPI.createBin(apiKey, keyType, { events: [], updatedAt: Date.now() });
-                        alert('カレンダーを作成しました！\n家族と共有するには以下のBin IDを伝えてください:\n\n' + binId);
-                    }
-                    StateManager.state.config = { apiKey, binId, keyType };
-                    StateManager.saveConfig();
-                    this.startSync();
-                    this.render();
-                } catch (e) { alert('エラーが発生しました: ' + e.message); }
-            },
-
-            resetConfig() { if (confirm('設定をリセットしますか？')) { StateManager.resetConfig(); this.render(); } },
-            prevMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() - 1); this.render(); },
-            nextMonth() { StateManager.state.currentDate.setMonth(StateManager.state.currentDate.getMonth() + 1); this.render(); },
-            goToday() { StateManager.state.currentDate = new Date(); this.render(); },
-            setFilter(category) { StateManager.state.filterCategory = category; this.render(); },
-
-            handleCellClick(date) {
-                if (StateManager.state.selectMode) SelectMode.execute(date);
-                else this.openAddEvent(date);
-            },
-
-            openAddEvent(date) {
-                ModalManager.show('予定を追加', FormBuilder.eventForm(null, date));
-            },
-
-            openEditEvent(id) {
-                const event = StateManager.findEvent(id);
-                if (event) ModalManager.show('予定を編集', FormBuilder.eventForm(event));
-            },
-
-            saveEvent(e, id, date) {
-                e.preventDefault();
-                const form = e.target;
-                const data = {
-                    id: id || Utils.generateId(), date,
-                    title: form.title.value,
-                    startTime: form.startTime.value,
-                    endTime: form.endTime.value,
-                    category: form.category.value,
-                    memo: form.memo.value
-                };
-                if (id) StateManager.updateEvent(id, data);
-                else StateManager.addEvent(data);
-                CloudAPI.syncToCloud();
-                ModalManager.close();
-                this.render();
-            },
-
-            deleteEvent(id) {
-                if (confirm('この予定を削除しますか？')) {
-                    StateManager.deleteEvent(id);
-                    CloudAPI.syncToCloud();
-                    ModalManager.close();
-                    this.render();
-                }
-            },
-
-            importICS(e) {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    const events = Utils.parseICS(evt.target.result);
-                    if (events.length === 0) {
-                        alert('読み込める予定がありませんでした');
-                        return;
-                    }
-
-                    const category = prompt(`${events.length}件の予定を読み込みます。\n誰の予定として登録しますか？\n\n1: おとうー\n2: まま\n3: まひる\n4: あゆは\n\n番号を入力:`, '1');
-                    const catMap = { '1': 'otou', '2': 'mama', '3': 'mahiru', '4': 'ayuha' };
-                    const selectedCat = catMap[category] || 'otou';
-
-                    events.forEach(ev => {
-                        ev.category = selectedCat;
-                        if (!ev.endTime) ev.endTime = ev.startTime;
-                        StateManager.addEvent(ev);
-                    });
-
-                    CloudAPI.syncToCloud();
-                    alert(`${events.length}件の予定を読み込みました`);
-                };
-                reader.readAsText(file);
-                e.target.value = '';
+                return;
             }
-        };
+
+            app.innerHTML = `
+        <header class="bg-gradient-to-r from-primary-600 to-primary-700 text-white p-4 shadow-lg sticky top-0 z-40">
+            <div class="max-w-4xl mx-auto flex justify-between items-center">
+                <h1 class="text-xl md:text-2xl font-bold">家族カレンダー</h1>
+                <div class="flex items-center gap-2">
+                    <span id="syncStatus" class="text-xs">---</span>
+                    <button onclick="manualSync()" class="bg-primary-800 hover:bg-primary-900 px-2 py-1 rounded text-xs">再同期</button>
+                    <button onclick="resetConfig()" class="bg-primary-800 hover:bg-primary-900 px-2 py-1 rounded text-xs">設定</button>
+                </div>
+            </div>
+        </header>
+        <main class="max-w-4xl mx-auto p-2 md:p-4">
+            <div class="bg-white rounded-lg shadow p-3 mb-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-2">
+                        <button onclick="prevMonth()" class="p-2 hover:bg-primary-100 rounded-lg">◀</button>
+                        <span id="monthLabel" class="text-lg font-bold text-primary-800"></span>
+                        <button onclick="nextMonth()" class="p-2 hover:bg-primary-100 rounded-lg">▶</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="goToday()" class="bg-primary-100 hover:bg-primary-200 px-3 py-1 rounded text-sm">今日</button>
+                        <label class="bg-green-100 hover:bg-green-200 px-3 py-1 rounded text-sm cursor-pointer">ICS読込<input type="file" accept=".ics" onchange="importICS(event)" class="hidden"></label>
+                    </div>
+                </div>
+                <div id="filterButtons" class="flex items-center gap-2 flex-wrap"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="grid grid-cols-7 bg-primary-100">
+                    ${['日', '月', '火', '水', '木', '金', '土'].map((d, i) => `<div class="p-2 text-center font-bold text-sm ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-primary-800'}">${d}</div>`).join('')}
+                </div>
+                <div id="calendarGrid" class="grid grid-cols-7 border-t border-primary-200"></div>
+            </div>
+        </main>`;
+
+            renderCalendar();
+            renderFilterButtons();
+            updateSyncIndicator();
+        }
 
         // ============================================================
-        // Initialize
+        // イベント操作関数
         // ============================================================
-        App.init();
+        async function setupConfig() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const keyType = document.querySelector('input[name="keyType"]:checked').value;
+            let binId = document.getElementById('binId').value.trim();
+
+            if (!apiKey) { alert('APIキーを入力してください'); return; }
+
+            try {
+                if (!binId) {
+                    binId = await CloudAPI.createBin(apiKey, keyType);
+                    alert('カレンダーを作成しました！\n家族と共有するには以下のBin IDを伝えてください:\n\n' + binId);
+                }
+                state.config = { apiKey, binId, keyType };
+                Storage.saveConfig();
+                render();
+                await CloudAPI.load();
+            } catch (e) {
+                alert('エラー: ' + e.message);
+            }
+        }
+
+        function resetConfig() {
+            if (confirm('設定をリセットしますか？')) {
+                Storage.reset();
+                render();
+            }
+        }
+
+        function prevMonth() { state.currentDate.setMonth(state.currentDate.getMonth() - 1); renderCalendar(); }
+        function nextMonth() { state.currentDate.setMonth(state.currentDate.getMonth() + 1); renderCalendar(); }
+        function goToday() { state.currentDate = new Date(); renderCalendar(); }
+        function setFilter(cat) { state.filterCategory = cat; renderFilterButtons(); renderCalendar(); }
+
+        function handleCellClick(date) {
+            if (state.selectMode) {
+                executeSelectMode(date);
+            } else {
+                openAddEvent(date);
+            }
+        }
+
+        function openAddEvent(date) {
+            showModal('予定を追加', eventFormHtml(null, date));
+        }
+
+        function openEditEvent(id) {
+            const ev = state.events.find(e => e.id === id);
+            if (ev) showModal('予定を編集', eventFormHtml(ev));
+        }
+
+        function eventFormHtml(ev, date = '') {
+            const isEdit = !!ev;
+            const e = ev || { title: '', startTime: '09:00', endTime: '10:00', category: 'otou', memo: '' };
+            const d = ev ? ev.date : date;
+            const cats = Config.CATEGORIES.map(c => `<option value="${c.id}" ${e.category === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+            const times = Utils.getTimeOptions().map(t => `<option value="${t}">${t}</option>`).join('');
+
+            return `
+        <form onsubmit="saveEvent(event, ${isEdit ? `'${e.id}'` : 'null'}, '${d}')">
+            <div class="space-y-4">
+                <div><label class="block text-sm font-medium mb-1">予定</label>
+                    <input type="text" name="title" value="${e.title}" required class="w-full border rounded px-3 py-2"></div>
+                <div><label class="block text-sm font-medium mb-1">誰の予定？</label>
+                    <select name="category" class="w-full border rounded px-3 py-2">${cats}</select></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium mb-1">開始</label>
+                        <select name="startTime" class="w-full border rounded px-3 py-2">${times.replace(`value="${e.startTime}"`, `value="${e.startTime}" selected`)}</select></div>
+                    <div><label class="block text-sm font-medium mb-1">終了</label>
+                        <select name="endTime" class="w-full border rounded px-3 py-2">${times.replace(`value="${e.endTime || e.startTime}"`, `value="${e.endTime || e.startTime}" selected`)}</select></div>
+                </div>
+                <div><label class="block text-sm font-medium mb-1">メモ</label>
+                    <textarea name="memo" class="w-full border rounded px-3 py-2 h-20">${e.memo || ''}</textarea></div>
+            </div>
+            <div class="mt-4 flex gap-2 justify-end">
+                ${isEdit ? `<button type="button" onclick="deleteEvent('${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded">削除</button>` : ''}
+                <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded">キャンセル</button>
+                <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded">保存</button>
+            </div>
+        </form>`;
+        }
+
+        async function saveEvent(e, id, date) {
+            e.preventDefault();
+            const form = e.target;
+            const data = {
+                id: id || Utils.generateId(),
+                date: date,
+                title: form.title.value,
+                startTime: form.startTime.value,
+                endTime: form.endTime.value,
+                category: form.category.value,
+                memo: form.memo.value
+            };
+
+            if (id) {
+                const idx = state.events.findIndex(ev => ev.id === id);
+                if (idx !== -1) state.events[idx] = data;
+            } else {
+                state.events.push(data);
+            }
+
+            Storage.saveEvents();
+            closeModal();
+            renderCalendar();
+            await CloudAPI.save();
+        }
+
+        async function deleteEvent(id) {
+            if (confirm('この予定を削除しますか？')) {
+                state.events = state.events.filter(e => e.id !== id);
+                Storage.saveEvents();
+                closeModal();
+                renderCalendar();
+                await CloudAPI.save();
+            }
+        }
+
+        function showModal(title, content) {
+            const html = `
+        <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="if(event.target===this)closeModal()">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <h2 class="text-xl font-bold mb-4 text-primary-800">${title}</h2>
+                ${content}
+            </div>
+        </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+
+        function closeModal() { document.getElementById('modal')?.remove(); }
+
+        async function manualSync() {
+            await CloudAPI.load();
+        }
+
+        async function importICS(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const events = Utils.parseICS(text);
+            if (events.length === 0) { alert('読み込める予定がありません'); return; }
+
+            const cat = prompt(`${events.length}件読み込みます。誰の予定？\n1:おとうー 2:まま 3:まひる 4:あゆは`, '1');
+            const catMap = { '1': 'otou', '2': 'mama', '3': 'mahiru', '4': 'ayuha' };
+            events.forEach(ev => {
+                ev.category = catMap[cat] || 'otou';
+                if (!ev.endTime) ev.endTime = ev.startTime;
+                state.events.push(ev);
+            });
+
+            Storage.saveEvents();
+            renderCalendar();
+            await CloudAPI.save();
+            alert(`${events.length}件読み込みました`);
+            e.target.value = '';
+        }
+
+        // ============================================================
+        // 初期化
+        // ============================================================
+        Storage.loadConfig();
+        Storage.loadEvents();
+        render();
+
+        if (state.config) {
+            // 初回読み込み
+            CloudAPI.load();
+            // 定期同期
+            setInterval(() => CloudAPI.load(), Config.SYNC_INTERVAL);
+        }
     </script>
 </body>
 
