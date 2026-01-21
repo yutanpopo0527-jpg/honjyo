@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>家族カレンダー</title>
     <meta name="description" content="家族みんなで予定を共有できるシンプルなカレンダーアプリ">
+    <link rel="icon" href="calendar-icon.jpg">
+    <link rel="apple-touch-icon" href="calendar-icon.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -887,7 +889,7 @@
                             </button>
                             <!-- ドロップダウンメニュー -->
                             ${s.isFilterMenuOpen ? `
-                            <div id="filterMenu" class="absolute top-full right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden py-1 max-h-80 overflow-y-auto">
+                            <div id="filterMenu" class="absolute top-full left-0 md:left-auto md:right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden py-1 max-h-80 overflow-y-auto">
                                 ${menuHtml}
                             </div>
                             <div class="fixed inset-0 z-40" onclick="App.toggleFilterMenu()"></div>
