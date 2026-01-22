@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31,14 +32,17 @@
         * {
             font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
         }
+
         .calendar-cell {
             min-height: 90px;
         }
+
         @media (min-width: 768px) {
             .calendar-cell {
                 min-height: 120px;
             }
         }
+
         .event-item {
             cursor: pointer;
             font-size: 10px;
@@ -47,26 +51,32 @@
             white-space: normal;
             transition: transform 0.1s, box-shadow 0.1s;
         }
+
         .event-item:hover {
             transform: scale(1.02);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
+
         @media (min-width: 768px) {
             .event-item {
                 font-size: 12px;
                 cursor: grab;
             }
+
             .event-item:active {
                 cursor: grabbing;
             }
         }
+
         .select-mode .calendar-cell {
             cursor: pointer;
             transition: background-color 0.2s;
         }
+
         .select-mode .calendar-cell:hover {
             background-color: rgba(14, 165, 233, 0.15);
         }
+
         .copy-mode-banner {
             position: fixed;
             top: 70px;
@@ -80,63 +90,79 @@
             z-index: 100;
             box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4);
         }
+
         .drag-over {
             background-color: rgba(14, 165, 233, 0.15) !important;
         }
+
         .member-card {
             cursor: grab;
             transition: transform 0.2s, box-shadow 0.2s;
         }
+
         .member-card:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
+
         .member-card:active {
             cursor: grabbing;
         }
+
         .sync-indicator {
             animation: pulse 2s infinite;
         }
+
         @keyframes pulse {
+
             0%,
             100% {
                 opacity: 1;
             }
+
             50% {
                 opacity: 0.5;
             }
         }
+
         .fade-in {
             animation: fadeIn 0.3s ease-out;
         }
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
                 transform: translateY(-10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
+
         /* カスタムスクロールバー */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
         }
+
         ::-webkit-scrollbar-track {
             background: #f1f5f9;
             border-radius: 3px;
         }
+
         ::-webkit-scrollbar-thumb {
             background: #cbd5e1;
             border-radius: 3px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
     </style>
 </head>
+
 <body class="bg-slate-50 min-h-screen">
     <div id="app"></div>
     <script>
@@ -382,10 +408,18 @@
                     throw new Error(json.message || '同期に失敗しました');
                 }
             },
+            // Cache fix for mobile
             async readBin() {
                 const { config } = StateManager.state;
-                const res = await fetch(`${Config.API_URL}/${config.binId}/latest`, {
-                    headers: { 'X-Master-Key': config.apiKey }
+                // キャッシュ回避用タイムスタンプ
+                const res = await fetch(`${Config.API_URL}/${config.binId}/latest?_t=${Date.now()}`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': config.apiKey,
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    },
+                    cache: 'no-store'
                 });
                 if (!res.ok) throw new Error('データの取得に失敗しました');
                 const json = await res.json();
@@ -440,6 +474,8 @@
                 }
             }
         };
+
+
         // ============================================================
         // FormBuilder Module - フォームテンプレート共通化
         // ============================================================
@@ -1028,6 +1064,14 @@
             init() {
                 if (StateManager.state.config) this.startSync();
                 this.render();
+                // Mobile fix: Sync on visibility gain
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') CloudAPI.syncFromCloud();
+                });
+                window.addEventListener('focus', () => CloudAPI.syncFromCloud());
+                window.addEventListener('pageshow', (e) => {
+                    if (e.persisted) CloudAPI.syncFromCloud();
+                });
             },
             startSync() {
                 if (this.syncInterval) clearInterval(this.syncInterval);
@@ -1488,7 +1532,19 @@
             }
         };
         // Initialize
+        window.Config = Config;
+        window.Utils = Utils;
+        window.StateManager = StateManager;
+        window.CloudAPI = CloudAPI;
+        window.FormBuilder = FormBuilder;
+        window.ModalManager = ModalManager;
+        window.SelectMode = SelectMode;
+        window.DragDrop = DragDrop;
+        window.UIRenderer = UIRenderer;
+        window.App = App;
+
         App.init();
     </script>
 </body>
+
 </html>
