@@ -45,16 +45,21 @@
 
         .event-item {
             cursor: pointer;
-            font-size: 10px;
-            line-height: 1.2;
-            word-break: break-all;
-            white-space: normal;
+            font-size: 11.5px;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             transition: transform 0.1s, box-shadow 0.1s;
+            margin-bottom: 2px;
+            border-radius: 3px;
         }
 
         .event-item:hover {
-            transform: scale(1.02);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            position: relative;
         }
 
         @media (min-width: 768px) {
@@ -837,14 +842,15 @@
                     </div>`;
                 }).join('');
                 // 時間指定の予定（色丸＋タイトル）
+                // 時間指定の予定（色帯＋タイトルのみ）
                 const timedHtml = timedEvents.map(e => {
                     const style = Utils.getMemberStyle(e.memberId);
                     return `
-                    <div class="event-item p-1 flex items-center gap-1" 
+                    <div class="event-item px-1 py-0.5 text-white block" 
+                         style="background-color: ${style.color}"
                          data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
                          onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
-                        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${style.color}"></span>
-                        <span class="text-slate-700 truncate">${e.title}</span>
+                        <span class="font-medium">${e.title}</span>
                     </div>`;
                 }).join('');
                 return `
