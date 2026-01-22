@@ -348,7 +348,8 @@
                 config: JSON.parse(localStorage.getItem(Config.STORAGE_KEY) || 'null'),
                 selectMode: null,
                 selectedEventId: null,
-                selectedMemberId: null
+                selectedMemberId: null,
+                lastCloudUpdate: 0 // データ整合性用タイムスタンプ
             },
             saveConfig() {
                 localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this.state.config));
@@ -473,8 +474,11 @@
                 s.syncError = null;
                 App.render();
                 try {
-                    await this.updateBin({ events: s.events, members: s.members, templates: s.templates, updatedAt: Date.now() });
+                    const now = Date.now();
+                    const payload = { events: s.events, members: s.members, templates: s.templates, updatedAt: now };
+                    await this.updateBin(payload);
                     s.lastSync = new Date();
+                    s.lastCloudUpdate = now; // 自分が送った最新版としてマーク
                     s.pendingSync = false;
                 } catch (e) {
                     console.error('Sync error:', e);
@@ -490,27 +494,32 @@
                 if (!s.config || s.syncing || s.pendingSync) return;
                 s.syncing = true;
                 s.syncError = null;
+                let shouldRender = true;
                 try {
                     const data = await this.readBin();
-                    if (data && !s.pendingSync) {
+                    // 多重同期による「先祖返り」防止
+                    // ローカルの送信済みデータより古い、または同じタイムスタンプのデータは無視する
+                    if (data && (!data.updatedAt || data.updatedAt > s.lastCloudUpdate)) {
                         s.events = data.events || [];
                         s.members = data.members || [];
                         s.templates = data.templates || [];
                         s.lastSync = new Date();
+                        if (data.updatedAt) s.lastCloudUpdate = data.updatedAt;
+
+                        // フォーカス維持ロジック
                         const activeEl = document.activeElement;
                         if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
                             UIRenderer.updateCalendarOnly();
                             UIRenderer.updateSidebarOnly();
-                        } else {
-                            App.render();
+                            shouldRender = false;
                         }
                     }
                 } catch (e) {
                     console.error('Sync error:', e);
-                    s.syncError = '同期に失敗しました: ' + e.message;
-                    App.render();
+                    // 読み込みエラーは致命的でないのでアラートは出さない（次回成功すればOK）
                 } finally {
                     s.syncing = false;
+                    if (shouldRender) App.render();
                 }
             }
         };
@@ -1190,7 +1199,15 @@
                 CloudAPI.syncFromCloud();
                 this.syncInterval = setInterval(() => CloudAPI.syncFromCloud(), Config.SYNC_INTERVAL);
             },
+            _renderId: null,
             render() {
+                // 描画デバウンス（もっさり解消：連続呼び出しを1フレームにまとめる）
+                if (this._renderId) cancelAnimationFrame(this._renderId);
+                this._renderId = requestAnimationFrame(() => {
+                    this._renderImplementation();
+                });
+            },
+            _renderImplementation() {
                 const app = document.getElementById('app');
                 const s = StateManager.state;
                 if (!s.config) { app.innerHTML = this.renderSetup(); return; }
