@@ -45,14 +45,23 @@
 
         .event-item {
             cursor: pointer;
-            font-size: 11.5px;
-            line-height: 1.3;
+            font-size: 10px;
+            /* 日本語4文字表示のためサイズ調整 */
+            line-height: 1.25;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             transition: transform 0.1s, box-shadow 0.1s;
             margin-bottom: 2px;
             border-radius: 3px;
+        }
+
+        /* 時間指定の予定（反転スタイル） */
+        .event-item.timed {
+            background-color: white !important;
+            font-weight: 600;
+            border: 1px solid currentColor;
+            /* 文字色と同じボーダー */
         }
 
         .event-item:hover {
@@ -66,10 +75,37 @@
             .event-item {
                 font-size: 12px;
                 cursor: grab;
+                display: flex;
+                /* PCはFlexboxで時間配置 */
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .event-item.timed {
+                /* PCでは少し強調 */
+                border-width: 2px;
+            }
+
+            .event-item>span:first-child {
+                /* タイトル部分：省略表示 */
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
             .event-item:active {
                 cursor: grabbing;
+            }
+
+            /* PC用：右側の時間表示 */
+            .event-time {
+                color: #64748b;
+                /* slate-500 */
+                font-size: 0.85em;
+                margin-left: 4px;
+                flex-shrink: 0;
             }
         }
 
@@ -182,13 +218,12 @@
             STORAGE_KEY: 'familyCalendarConfig',
             MEMBER_COLORS: {
                 yuta: { name: 'ゆた', color: '#00bfff' },
-                yoyo: { name: 'よーよー', color: '#ff4500' },
+                yoyo: { name: 'よーよー', color: '#fa8072' },
                 mahiru: { name: 'まひる', color: '#9932cc' },
-                ayuha: { name: 'あゆは', color: '#ffd700' },
-                family: { name: '家族全員', color: '#fa8072' },
+                ayuha: { name: 'あゆは', color: '#ff4500' },
+                family: { name: '家族全員', color: '#66cdaa' },
                 staygold: { name: 'STAY GOLD', color: '#000080' },
-                yoyoenglish: { name: 'YOYO ENGLISH', color: '#ffa500' },
-                church: { name: '教会', color: '#66cdaa' }
+                yoyoenglish: { name: 'YOYO ENGLISH', color: '#ffa500' }
             },
             // メンバー追加用の追加カラー（20色）
             EXTRA_COLORS: [
@@ -323,30 +358,30 @@
                 this.state.config = null;
             },
             findEvent(id) {
-                return this.state.events.find(e => e.id === id);
+                return this.state.events.find(e => String(e.id) === String(id));
             },
             findMember(id) {
-                return this.state.members.find(m => m.id === id);
+                return this.state.members.find(m => String(m.id) === String(id));
             },
             addEvent(event) {
                 this.state.events.push(event);
             },
             updateEvent(id, data) {
-                const idx = this.state.events.findIndex(e => e.id === id);
+                const idx = this.state.events.findIndex(e => String(e.id) === String(id));
                 if (idx !== -1) this.state.events[idx] = data;
             },
             deleteEvent(id) {
-                this.state.events = this.state.events.filter(e => e.id !== id);
+                this.state.events = this.state.events.filter(e => String(e.id) !== String(id));
             },
             addMember(member) {
                 this.state.members.push(member);
             },
             updateMember(id, data) {
-                const idx = this.state.members.findIndex(m => m.id === id);
+                const idx = this.state.members.findIndex(m => String(m.id) === String(id));
                 if (idx !== -1) this.state.members[idx] = data;
             },
             deleteMember(id) {
-                this.state.members = this.state.members.filter(m => m.id !== id);
+                this.state.members = this.state.members.filter(m => String(m.id) !== String(id));
             },
             getFilteredEvents() {
                 const s = this.state;
@@ -357,17 +392,17 @@
             },
             // テンプレート管理
             findTemplate(id) {
-                return this.state.templates.find(t => t.id === id);
+                return this.state.templates.find(t => String(t.id) === String(id));
             },
             addTemplate(template) {
                 this.state.templates.push(template);
             },
             updateTemplate(id, data) {
-                const idx = this.state.templates.findIndex(t => t.id === id);
+                const idx = this.state.templates.findIndex(t => String(t.id) === String(id));
                 if (idx !== -1) this.state.templates[idx] = data;
             },
             deleteTemplate(id) {
-                this.state.templates = this.state.templates.filter(t => t.id !== id);
+                this.state.templates = this.state.templates.filter(t => String(t.id) !== String(id));
             },
             // 追加メンバーの色を取得
             getMemberColor(memberId) {
@@ -511,7 +546,7 @@
                 const startDate = e.startDate || formDate;
                 const endDate = e.endDate || formDate;
                 return `
-                <form id="eventForm" onsubmit="App.saveEvent(event, ${isEdit ? `'${formId}'` : 'null'}, '${formDate}')">
+                <form id="eventForm">
                     <div class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">予定のタイトル</label>
@@ -564,9 +599,9 @@
                         </div>
                     </div>` : ''}
                     <div class="mt-6 flex gap-2 justify-end">
-                        ${isEdit ? `<button type="button" onclick="App.deleteEvent('${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
+                        ${isEdit ? `<button type="button" onclick="App.deleteEvent(event, '${e.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
                         <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
-                        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
+                        <button type="button" onclick="App.saveEvent(event, ${isEdit ? `'${formId}'` : 'null'}, '${formDate}')" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
                     </div>
                 </form>`;
             },
@@ -652,16 +687,81 @@
             show(title, content) {
                 const html = `
                 <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 fade-in" onclick="ModalManager.close(event)">
-                    <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl" onclick="event.stopPropagation()">
+                    <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
                         <h2 class="text-xl font-bold mb-4 text-slate-800">${title}</h2>
                         ${content}
                     </div>
                 </div>`;
                 document.body.insertAdjacentHTML('beforeend', html);
             },
+            // DayView: 指定日の予定一覧を表示
+            showDayView(dateStr) {
+                const events = StateManager.getFilteredEvents().filter(e => {
+                    // 終日・複数日考慮
+                    if (e.isAllDay) {
+                        if (e.startDate && e.endDate) return dateStr >= e.startDate && dateStr <= e.endDate;
+                        return e.date === dateStr;
+                    }
+                    return e.date === dateStr;
+                }).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')); // 時間順
+
+                const d = new Date(dateStr);
+                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+                const title = `${d.getMonth() + 1}月${d.getDate()}日 ${weekdays[d.getDay()]}曜日`;
+
+                let listHtml = '';
+                if (events.length === 0) {
+                    listHtml = '<p class="text-slate-500 text-center py-4">予定はありません</p>';
+                } else {
+                    listHtml = events.map(e => {
+                        const style = Utils.getMemberStyle(e.memberId);
+                        const timeDisplay = e.isAllDay ? '<span class="text-xs font-bold text-slate-400">終日</span>'
+                            : `<div class="flex flex-col text-xs font-bold text-slate-700 leading-tight w-10 text-right">
+                                 <span>${e.startTime || ''}</span>
+                                 <span class="text-slate-400">${e.endTime || ''}</span>
+                               </div>`;
+
+                        return `
+                        <div onclick="ModalManager.close(); App.openEditEvent('${e.id}')" class="flex items-center gap-4 py-3 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 transition">
+                            <div class="flex-shrink-0 w-12 flex justify-end">
+                                ${timeDisplay}
+                            </div>
+                            <div class="w-1 self-stretch rounded-full" style="background-color: ${style.color}"></div>
+                            <div class="flex-1">
+                                <span class="font-bold text-lg text-slate-800">${e.title}</span>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+
+                // フローティングアクションボタン (新規作成)
+                const fabHtml = `
+                <div class="absolute bottom-6 right-6">
+                     <button onclick="ModalManager.close(); App.openAddEvent('${dateStr}')" class="bg-slate-800 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-3xl hover:bg-slate-700 transition">
+                        +
+                     </button>
+                </div>`;
+
+                const content = `
+                <div class="relative min-h-[300px]">
+                    <div class="space-y-1">
+                        ${listHtml}
+                    </div>
+                    ${fabHtml}
+                </div>`;
+
+                this.show(title, content);
+            },
             close(e) {
                 if (e && e.target !== e.currentTarget) return;
-                document.querySelector('.fixed.inset-0')?.remove();
+                if (e && e.currentTarget) {
+                    e.currentTarget.remove();
+                } else {
+                    const modals = document.querySelectorAll('.fixed.inset-0');
+                    if (modals.length > 0) {
+                        modals[modals.length - 1].remove();
+                    }
+                }
             }
         };
         // ============================================================
@@ -778,6 +878,8 @@
             getMultiDayEventsForDate(events, dateStr) {
                 return events.filter(e => {
                     if (!e.isAllDay || !e.startDate || !e.endDate) return false;
+                    // 単一日（開始日と終了日が同じ）の場合はここでは表示しない（重複防止）
+                    if (e.startDate === e.endDate) return false;
                     return dateStr >= e.startDate && dateStr <= e.endDate;
                 });
             },
@@ -842,15 +944,19 @@
                     </div>`;
                 }).join('');
                 // 時間指定の予定（色丸＋タイトル）
-                // 時間指定の予定（色帯＋タイトルのみ）
+                // 時間指定の予定（色反転＋PC右時間）
                 const timedHtml = timedEvents.map(e => {
                     const style = Utils.getMemberStyle(e.memberId);
+                    // PC表示用の時間
+                    const pcTimeHtml = e.startTime ? `<span class="event-time hidden md:inline whitespace-nowrap ml-1 text-xs text-slate-500">${e.startTime}</span>` : '';
+
                     return `
-                    <div class="event-item px-1 py-0.5 text-white block" 
-                         style="background-color: ${style.color}"
+                    <div class="event-item timed px-1 py-0.5 flex items-center justify-between" 
+                         style="color: ${style.color}; border-color: ${style.color}"
                          data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
-                         onclick="event.stopPropagation(); App.openEditEvent('${e.id}')">
-                        <span class="font-medium">${e.title}</span>
+                         onclick="event.stopPropagation(); App.handleEventClick('${e.id}', '${dateStr}', event)">
+                        <span class="truncate flex-1 min-w-0 text-left">${e.title}</span>
+                        ${pcTimeHtml}
                     </div>`;
                 }).join('');
                 return `
@@ -1222,9 +1328,28 @@
                 this.render();
             },
             // Events
+            // カレンダーの日付セルクリック時もPCなら新規作成、モバイルならDayView
             handleCellClick(date) {
-                if (StateManager.state.selectMode) SelectMode.execute(date);
-                else this.openAddEvent(date);
+                if (StateManager.state.selectMode) {
+                    SelectMode.execute(date);
+                } else {
+                    if (window.innerWidth < 768) {
+                        ModalManager.showDayView(date);
+                    } else {
+                        // PCはクリックで新規作成（既存動作）
+                        this.openAddEvent(date);
+                    }
+                }
+            },
+            // モバイル・PCでのクリック挙動分岐
+            handleEventClick(id, dateStr, e) {
+                if (window.innerWidth < 768) {
+                    // モバイル：その日の予定一覧（DayView）を表示
+                    ModalManager.showDayView(dateStr);
+                } else {
+                    // PC：直接編集
+                    this.openEditEvent(id);
+                }
             },
             openAddEvent(date) {
                 ModalManager.show('予定を追加', FormBuilder.eventForm(null, date));
@@ -1235,7 +1360,11 @@
             },
             saveEvent(e, id, date) {
                 e.preventDefault();
-                const form = e.target;
+                const form = e.target.closest('form');
+                if (!form.checkValidity()) {
+                    form.reportValidity();
+                    return;
+                }
                 const isAllDay = form.isAllDay.checked;
                 const data = {
                     id: id || Utils.generateId(),
@@ -1255,13 +1384,30 @@
                 ModalManager.close();
                 this.render();
             },
-            deleteEvent(id) {
-                if (confirm('この予定を削除しますか？')) {
-                    StateManager.deleteEvent(id);
-                    CloudAPI.syncToCloud();
-                    ModalManager.close();
-                    this.render();
+            deleteEvent(e, id) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
+                // window.confirmの代わりにカスタムモーダルを表示
+                const content = `
+                <div class="p-2">
+                    <p class="text-slate-700 mb-6 font-medium">本当にこの予定を削除しますか？<br><span class="text-sm text-slate-500">※この操作は取り消せません。</span></p>
+                    <div class="flex gap-2 justify-end">
+                        <button onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">いいえ</button>
+                        <button onclick="App.executeDelete('${id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">はい、削除します</button>
+                    </div>
+                </div>`;
+                ModalManager.show('削除確認', content);
+            },
+            executeDelete(id) {
+                StateManager.deleteEvent(id);
+                CloudAPI.syncToCloud();
+                // 確認モーダルを閉じる
+                ModalManager.close(); // User might have closed Edit modal? No, stacking fix method handles top one (Confirm).
+                // 編集モーダルも閉じるために再度closeを呼ぶ（スタックされている場合）
+                ModalManager.close();
+                this.render();
             },
             autoEndTime(el) {
                 const form = el.closest('form');
