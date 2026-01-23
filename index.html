@@ -212,10 +212,11 @@
         // ============================================================
         const Config = {
             API_URL: 'https://api.jsonbin.io/v3/b',
-            SYNC_INTERVAL: 5000,
+            SYNC_INTERVAL: 10000,
             ADMIN_PASSWORD: '0927',
             TIME_RANGE: { start: 6, end: 23, step: 30 },
             STORAGE_KEY: 'familyCalendarConfig',
+            DATA_KEY: 'familyCalendarData',
             MEMBER_COLORS: {
                 yuta: { name: 'ゆた', color: '#00bfff' },
                 yoyo: { name: 'よーよー', color: '#fa8072' },
@@ -331,6 +332,8 @@
         // StateManager Module - 状態管理
         // ============================================================
         const StateManager = {
+            _filteredEventsCache: null,
+            _filterCacheKey: null,
             state: {
                 isAdmin: false,
                 currentDate: new Date(),
@@ -342,6 +345,7 @@
                 dragData: null,
                 showSidebar: true,
                 syncing: false,
+                syncLock: false,
                 syncError: null,
                 pendingSync: false,
                 lastSync: null,
@@ -349,13 +353,41 @@
                 selectMode: null,
                 selectedEventId: null,
                 selectedMemberId: null,
-                lastCloudUpdate: 0 // データ整合性用タイムスタンプ
+                lastCloudUpdate: 0, // データ整合性用タイムスタンプ
+                localModified: false // ローカル変更フラグ
             },
             saveConfig() {
                 localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this.state.config));
             },
+            invalidateCache() {
+                this._filteredEventsCache = null;
+                this._filterCacheKey = null;
+            },
+            saveData() {
+                if (!this.state.config) return;
+                this.invalidateCache();
+                const data = {
+                    events: this.state.events,
+                    members: this.state.members,
+                    templates: this.state.templates,
+                    lastCloudUpdate: this.state.lastCloudUpdate
+                };
+                localStorage.setItem(Config.DATA_KEY, JSON.stringify(data));
+            },
+            loadData() {
+                if (!this.state.config) return;
+                const raw = localStorage.getItem(Config.DATA_KEY);
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    this.state.events = data.events || [];
+                    this.state.members = data.members || [];
+                    this.state.templates = data.templates || [];
+                    this.state.lastCloudUpdate = data.lastCloudUpdate || 0;
+                }
+            },
             resetConfig() {
                 localStorage.removeItem(Config.STORAGE_KEY);
+                localStorage.removeItem(Config.DATA_KEY);
                 this.state.config = null;
             },
             findEvent(id) {
@@ -366,30 +398,58 @@
             },
             addEvent(event) {
                 this.state.events.push(event);
+                this.state.localModified = true;
+                this.saveData();
             },
             updateEvent(id, data) {
                 const idx = this.state.events.findIndex(e => String(e.id) === String(id));
-                if (idx !== -1) this.state.events[idx] = data;
+                if (idx !== -1) {
+                    this.state.events[idx] = data;
+                    this.state.localModified = true;
+                    this.saveData();
+                }
             },
             deleteEvent(id) {
                 this.state.events = this.state.events.filter(e => String(e.id) !== String(id));
+                this.state.localModified = true;
+                this.saveData();
             },
             addMember(member) {
                 this.state.members.push(member);
+                this.state.localModified = true;
+                this.saveData();
             },
             updateMember(id, data) {
                 const idx = this.state.members.findIndex(m => String(m.id) === String(id));
-                if (idx !== -1) this.state.members[idx] = data;
+                if (idx !== -1) {
+                    this.state.members[idx] = data;
+                    this.state.localModified = true;
+                    this.saveData();
+                }
             },
             deleteMember(id) {
                 this.state.members = this.state.members.filter(m => String(m.id) !== String(id));
+                this.state.localModified = true;
+                this.saveData();
             },
             getFilteredEvents() {
                 const s = this.state;
-                if (s.filterMembers.length === 0) return s.events;
-                // 選択されたメンバーIDに含まれる予定のみ返す
-                // ※以前はfamilyを常に含めていたが、複数選択になったので選択状態に従う
-                return s.events.filter(e => s.filterMembers.includes(e.memberId));
+                // キャッシュキー生成
+                const cacheKey = s.filterMembers.join(',') + ':' + s.events.length;
+                if (this._filteredEventsCache !== null && this._filterCacheKey === cacheKey) {
+                    return this._filteredEventsCache;
+                }
+                // フィルタリング実行
+                let result;
+                if (s.filterMembers.length === 0) {
+                    result = s.events;
+                } else {
+                    result = s.events.filter(e => s.filterMembers.includes(e.memberId));
+                }
+                // キャッシュ保存
+                this._filteredEventsCache = result;
+                this._filterCacheKey = cacheKey;
+                return result;
             },
             // テンプレート管理
             findTemplate(id) {
@@ -397,13 +457,21 @@
             },
             addTemplate(template) {
                 this.state.templates.push(template);
+                this.state.localModified = true;
+                this.saveData();
             },
             updateTemplate(id, data) {
                 const idx = this.state.templates.findIndex(t => String(t.id) === String(id));
-                if (idx !== -1) this.state.templates[idx] = data;
+                if (idx !== -1) {
+                    this.state.templates[idx] = data;
+                    this.state.localModified = true;
+                    this.saveData();
+                }
             },
             deleteTemplate(id) {
                 this.state.templates = this.state.templates.filter(t => String(t.id) !== String(id));
+                this.state.localModified = true;
+                this.saveData();
             },
             // 追加メンバーの色を取得
             getMemberColor(memberId) {
@@ -468,58 +536,69 @@
             },
             async syncToCloud() {
                 const s = StateManager.state;
-                if (!s.config || s.syncing) return;
+                if (!s.config || s.syncLock) return;
+                // ロック取得
+                s.syncLock = true;
                 s.syncing = true;
                 s.pendingSync = true;
                 s.syncError = null;
-                App.render();
+                UIRenderer.updateSyncStatus();
                 try {
                     const now = Date.now();
                     const payload = { events: s.events, members: s.members, templates: s.templates, updatedAt: now };
                     await this.updateBin(payload);
                     s.lastSync = new Date();
-                    s.lastCloudUpdate = now; // 自分が送った最新版としてマーク
+                    s.lastCloudUpdate = now;
                     s.pendingSync = false;
+                    s.localModified = false;
+                    StateManager.saveData();
                 } catch (e) {
                     console.error('Sync error:', e);
                     s.syncError = '同期に失敗しました: ' + e.message;
                     s.pendingSync = false;
                 } finally {
                     s.syncing = false;
-                    App.render();
+                    s.syncLock = false;
+                    UIRenderer.updateSyncStatus();
                 }
             },
             async syncFromCloud() {
                 const s = StateManager.state;
-                if (!s.config || s.syncing || s.pendingSync) return;
+                // ロック中またはローカル変更保留中はスキップ
+                if (!s.config || s.syncLock || s.pendingSync || s.localModified) return;
+                // ロック取得
+                s.syncLock = true;
                 s.syncing = true;
                 s.syncError = null;
-                let shouldRender = true;
+                let dataUpdated = false;
                 try {
                     const data = await this.readBin();
-                    // 多重同期による「先祖返り」防止
-                    // ローカルの送信済みデータより古い、または同じタイムスタンプのデータは無視する
-                    if (data && (!data.updatedAt || data.updatedAt > s.lastCloudUpdate)) {
+                    // クラウドのデータが新しい場合のみ適用
+                    if (data && data.updatedAt && data.updatedAt > s.lastCloudUpdate) {
                         s.events = data.events || [];
                         s.members = data.members || [];
                         s.templates = data.templates || [];
                         s.lastSync = new Date();
-                        if (data.updatedAt) s.lastCloudUpdate = data.updatedAt;
-
-                        // フォーカス維持ロジック
+                        s.lastCloudUpdate = data.updatedAt;
+                        StateManager.saveData();
+                        dataUpdated = true;
+                    }
+                } catch (e) {
+                    console.error('Sync error:', e);
+                } finally {
+                    s.syncing = false;
+                    s.syncLock = false;
+                    // データ更新があった場合のみ再描画
+                    if (dataUpdated) {
                         const activeEl = document.activeElement;
                         if (activeEl && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeEl.tagName)) {
                             UIRenderer.updateCalendarOnly();
                             UIRenderer.updateSidebarOnly();
-                            shouldRender = false;
+                        } else {
+                            App.render();
                         }
                     }
-                } catch (e) {
-                    console.error('Sync error:', e);
-                    // 読み込みエラーは致命的でないのでアラートは出さない（次回成功すればOK）
-                } finally {
-                    s.syncing = false;
-                    if (shouldRender) App.render();
+                    UIRenderer.updateSyncStatus();
                 }
             }
         };
@@ -1175,6 +1254,18 @@
                 if (panel) {
                     panel.innerHTML = this.sidebar();
                 }
+            },
+            updateSyncStatus() {
+                const s = StateManager.state;
+                const el = document.getElementById('syncStatusIndicator');
+                if (!el) return;
+                if (s.syncError) {
+                    el.innerHTML = `<span class="text-xs text-red-500 font-bold cursor-pointer hover:underline" onclick="alert('${s.syncError}\\n\\n設定を確認してください。')">⚠️ 同期エラー</span>`;
+                } else if (s.syncing) {
+                    el.innerHTML = `<span class="text-xs text-slate-500 sync-indicator">同期中...</span>`;
+                } else {
+                    el.innerHTML = `<span class="text-xs text-slate-500">${s.lastSync ? '✓ 同期済' : ''}</span>`;
+                }
             }
         };
         // ============================================================
@@ -1183,7 +1274,10 @@
         const App = {
             syncInterval: null,
             init() {
-                if (StateManager.state.config) this.startSync();
+                if (StateManager.state.config) {
+                    StateManager.loadData();
+                    this.startSync();
+                }
                 this.render();
                 // Mobile fix: Sync on visibility gain
                 document.addEventListener('visibilitychange', () => {
@@ -1219,10 +1313,10 @@
                             家族カレンダー
                         </h1>
                         <div class="flex items-center gap-3">
-                            ${s.syncError ?
+                            <div id="syncStatusIndicator">${s.syncError ?
                         `<span class="text-xs text-red-500 font-bold cursor-pointer hover:underline" onclick="alert('${s.syncError}\\n\\n設定を確認してください。')">⚠️ 同期エラー</span>` :
                         `<span class="text-xs text-slate-500 ${s.syncing ? 'sync-indicator' : ''}">${s.lastSync ? '✓ 同期済' : '同期中...'}</span>`
-                    }
+                    }</div>
                             ${!s.isAdmin ? `
                             <button onclick="App.openAdminLogin()" class="text-slate-400 hover:text-slate-600 transition" title="管理者ログイン">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
