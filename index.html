@@ -1045,7 +1045,7 @@
                          style="color: ${style.color}; border-color: ${style.color}"
                          data-event-id="${e.id}" draggable="true" ondragstart="DragDrop.handleStart(event, '${e.id}')" 
                          onclick="event.stopPropagation(); App.handleEventClick('${e.id}', '${dateStr}', event)">
-                        <span class="truncate flex-1 min-w-0 text-left">${e.title}</span>
+                        <span class="overflow-hidden flex-1 min-w-0 text-left">${e.title}</span>
                         ${pcTimeHtml}
                     </div>`;
                 }).join('');
