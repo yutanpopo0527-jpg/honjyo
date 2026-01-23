@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家族カレンダー</title>
+    <title>ファミリーカレンダー</title>
     <meta name="description" content="家族みんなで予定を共有できるシンプルなカレンダーアプリ">
     <link rel="icon" href="calendar-icon.jpg">
     <link rel="apple-touch-icon" href="calendar-icon.jpg">
@@ -1208,22 +1208,23 @@
                     </div>`;
                 }).join('') : '<p class="text-sm text-slate-400 text-center py-2">テンプレートなし</p>';
                 return `
-                <div class="space-y-4">
-                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                <div class="flex flex-col gap-4">
+                    <!-- スマホ: テンプレートを上に、PC: 今後の予定を上に -->
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-2 lg:order-1">
                         <h3 class="font-bold text-slate-800 mb-3 flex items-center gap-2">
                             <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                             今後の予定
                         </h3>
                         <div class="space-y-2">${upcomingHtml}</div>
                     </div>
-                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-1 lg:order-2">
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="font-bold text-slate-800">📋 テンプレート</h3>
                             <button onclick="App.openAddTemplate()" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">+ 追加</button>
                         </div>
                         <div class="space-y-2">${templatesHtml}</div>
                     </div>
-                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-3">
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="font-bold text-slate-800">カラー凡例</h3>
                             ${s.isAdmin ? '<button onclick="App.openAddMember()" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">+ メンバー</button>' : ''}
@@ -1231,7 +1232,7 @@
                         <div class="grid grid-cols-2 gap-2">${legendHtml}</div>
                     </div>
                     ${s.isAdmin ? `
-                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                    <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-4">
                         <h3 class="font-bold text-slate-800 mb-3">管理</h3>
                         <div class="space-y-2">
                             <button onclick="App.showSettings()" class="w-full bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg text-sm transition">
@@ -1312,7 +1313,7 @@
                     <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center flex-wrap gap-2">
                         <h1 class="text-xl md:text-2xl font-bold text-slate-800 flex items-center gap-2">
                             <span class="text-2xl">📅</span>
-                            家族カレンダー
+                            ファミリーカレンダー
                         </h1>
                         <div class="flex items-center gap-3">
                             <div id="syncStatusIndicator">${s.syncError ?
