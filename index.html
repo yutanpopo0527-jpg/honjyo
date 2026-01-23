@@ -342,6 +342,8 @@
                 events: [],
                 members: [],
                 templates: [],
+                templateFolders: [], // テンプレートフォルダ
+                collapsedFolders: [], // 折りたたみ状態のフォルダID
                 filterMembers: [], // 空配列 = 全員表示
                 isFilterMenuOpen: false,
                 dragData: null,
@@ -372,6 +374,7 @@
                     events: this.state.events,
                     members: this.state.members,
                     templates: this.state.templates,
+                    templateFolders: this.state.templateFolders,
                     lastCloudUpdate: this.state.lastCloudUpdate
                 };
                 localStorage.setItem(Config.DATA_KEY, JSON.stringify(data));
@@ -384,6 +387,7 @@
                     this.state.events = data.events || [];
                     this.state.members = data.members || [];
                     this.state.templates = data.templates || [];
+                    this.state.templateFolders = data.templateFolders || [];
                     this.state.lastCloudUpdate = data.lastCloudUpdate || 0;
                 }
             },
@@ -475,6 +479,58 @@
                 this.state.localModified = true;
                 this.saveData();
             },
+            // テンプレートフォルダ管理
+            findFolder(id) {
+                return this.state.templateFolders.find(f => String(f.id) === String(id));
+            },
+            addFolder(folder) {
+                this.state.templateFolders.push(folder);
+                this.state.localModified = true;
+                this.saveData();
+            },
+            updateFolder(id, data) {
+                const idx = this.state.templateFolders.findIndex(f => String(f.id) === String(id));
+                if (idx !== -1) {
+                    this.state.templateFolders[idx] = data;
+                    this.state.localModified = true;
+                    this.saveData();
+                }
+            },
+            deleteFolder(id) {
+                // フォルダ内のテンプレートを未分類に移動
+                this.state.templates.forEach(t => {
+                    if (t.folderId === id) t.folderId = null;
+                });
+                this.state.templateFolders = this.state.templateFolders.filter(f => String(f.id) !== String(id));
+                this.state.localModified = true;
+                this.saveData();
+            },
+            toggleFolderCollapse(id) {
+                const idx = this.state.collapsedFolders.indexOf(id);
+                if (idx === -1) {
+                    this.state.collapsedFolders.push(id);
+                } else {
+                    this.state.collapsedFolders.splice(idx, 1);
+                }
+            },
+            moveTemplate(id, direction) {
+                const template = this.findTemplate(id);
+                if (!template) return;
+                const folderId = template.folderId || null;
+                // 同じフォルダ内のテンプレートを取得してorder順にソート
+                const folderTemplates = this.state.templates
+                    .filter(t => (t.folderId || null) === folderId)
+                    .sort((a, b) => (a.order || 0) - (b.order || 0));
+                const currentIdx = folderTemplates.findIndex(t => String(t.id) === String(id));
+                const newIdx = direction === 'up' ? currentIdx - 1 : currentIdx + 1;
+                if (newIdx < 0 || newIdx >= folderTemplates.length) return;
+                // order値を入れ替え
+                const temp = folderTemplates[currentIdx].order;
+                folderTemplates[currentIdx].order = folderTemplates[newIdx].order;
+                folderTemplates[newIdx].order = temp;
+                this.state.localModified = true;
+                this.saveData();
+            },
             // 追加メンバーの色を取得
             getMemberColor(memberId) {
                 // 固定メンバーの色
@@ -547,7 +603,7 @@
                 UIRenderer.updateSyncStatus();
                 try {
                     const now = Date.now();
-                    const payload = { events: s.events, members: s.members, templates: s.templates, updatedAt: now };
+                    const payload = { events: s.events, members: s.members, templates: s.templates, templateFolders: s.templateFolders, updatedAt: now };
                     await this.updateBin(payload);
                     s.lastSync = new Date();
                     s.lastCloudUpdate = now;
@@ -580,6 +636,7 @@
                         s.events = data.events || [];
                         s.members = data.members || [];
                         s.templates = data.templates || [];
+                        s.templateFolders = data.templateFolders || [];
                         s.lastSync = new Date();
                         s.lastCloudUpdate = data.updatedAt;
                         StateManager.saveData();
@@ -727,7 +784,7 @@
             },
             templateForm(template = null) {
                 const isEdit = !!template;
-                const t = template || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', isAllDay: false };
+                const t = template || { title: '', memberId: 'family', startTime: '09:00', endTime: '10:00', isAllDay: false, folderId: null, order: 0 };
                 const formId = template ? template.id : 'null';
                 return `
                 <form onsubmit="App.saveTemplate(event, ${isEdit ? `'${formId}'` : 'null'})">
@@ -740,6 +797,10 @@
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">誰の予定？</label>
                             ${this.memberSelect('memberId', t.memberId)}
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">フォルダ</label>
+                            ${this.folderSelect('folderId', t.folderId)}
                         </div>
                         <div class="flex items-center gap-2 py-2">
                             <input type="checkbox" name="isAllDay" id="isAllDayTpl${isEdit ? 'Edit' : ''}" ${t.isAllDay ? 'checked' : ''} 
@@ -764,6 +825,34 @@
                     </div>
                     <div class="mt-6 flex gap-2 justify-end">
                         ${isEdit ? `<button type="button" onclick="App.deleteTemplate('${t.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
+                        <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
+                    </div>
+                </form>`;
+            },
+            folderSelect(name, selectedId = null) {
+                const s = StateManager.state;
+                let options = '<option value="">未分類</option>';
+                s.templateFolders.forEach(f => {
+                    options += `<option value="${f.id}" ${f.id === selectedId ? 'selected' : ''}>${f.name}</option>`;
+                });
+                return `<select name="${name}" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">${options}</select>`;
+            },
+            folderForm(folder = null) {
+                const isEdit = !!folder;
+                const f = folder || { name: '' };
+                const formId = folder ? folder.id : 'null';
+                return `
+                <form onsubmit="App.saveFolder(event, ${isEdit ? `'${formId}'` : 'null'})">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">フォルダ名</label>
+                            <input type="text" name="name" value="${f.name}" required placeholder="例：よく使う、習い事" 
+                                class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        </div>
+                    </div>
+                    <div class="mt-6 flex gap-2 justify-end">
+                        ${isEdit ? `<button type="button" onclick="App.deleteFolder('${f.id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>` : ''}
                         <button type="button" onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
                         <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">保存</button>
                     </div>
@@ -1190,23 +1279,71 @@
                         <span class="text-xs text-slate-600">${m.name}</span>
                     </div>`;
                 });
-                // テンプレート一覧
-                const templatesHtml = s.templates.length > 0 ? s.templates.map(t => {
-                    const style = Utils.getMemberStyle(t.memberId);
-                    return `
-                    <div class="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
-                        <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2 flex-1 min-w-0">
-                                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${style.color}"></span>
-                                <span class="text-sm text-slate-700 truncate">${t.title}</span>
+                // テンプレート一覧（フォルダ別）
+                const buildTemplatesHtml = () => {
+                    if (s.templates.length === 0 && s.templateFolders.length === 0) {
+                        return '<p class="text-sm text-slate-400 text-center py-2">テンプレートなし</p>';
+                    }
+                    // フォルダ順にソート
+                    const sortedFolders = [...s.templateFolders].sort((a, b) => (a.order || 0) - (b.order || 0));
+                    // 未分類用の仮想フォルダを追加
+                    const allFolders = [...sortedFolders, { id: null, name: '未分類', order: 999 }];
+
+                    let html = '';
+                    allFolders.forEach(folder => {
+                        const folderId = folder.id;
+                        const folderTemplates = s.templates
+                            .filter(t => (t.folderId || null) === folderId)
+                            .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                        // 未分類フォルダはテンプレートがある場合のみ表示
+                        if (folderId === null && folderTemplates.length === 0) return;
+                        // 作成したフォルダは空でも表示
+
+                        const isCollapsed = s.collapsedFolders.includes(folderId);
+                        const chevron = isCollapsed ? '▶' : '▼';
+
+                        html += `<div class="mb-2">`;
+                        // フォルダヘッダー
+                        html += `<div class="flex items-center justify-between bg-slate-100 rounded px-2 py-1 cursor-pointer hover:bg-slate-200" onclick="App.toggleFolder('${folderId}')">
+                            <div class="flex items-center gap-1 text-sm font-medium text-slate-700">
+                                <span class="text-xs">${chevron}</span>
+                                <span>📁 ${folder.name}</span>
+                                <span class="text-xs text-slate-400">(${folderTemplates.length})</span>
                             </div>
-                            <div class="flex gap-1 flex-shrink-0">
-                                <button onclick="App.useTemplate('${t.id}')" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">入力</button>
-                                <button onclick="App.editTemplate('${t.id}')" class="text-xs text-slate-500 hover:text-slate-700">編集</button>
-                            </div>
-                        </div>
-                    </div>`;
-                }).join('') : '<p class="text-sm text-slate-400 text-center py-2">テンプレートなし</p>';
+                            ${folderId !== null ? `<button onclick="event.stopPropagation(); App.editFolder('${folderId}')" class="text-xs text-slate-400 hover:text-slate-600">編集</button>` : ''}
+                        </div>`;
+
+                        // 折りたたみ時は中身を非表示
+                        if (!isCollapsed) {
+                            html += `<div class="pl-2 mt-1 space-y-1">`;
+                            folderTemplates.forEach((t, idx) => {
+                                const style = Utils.getMemberStyle(t.memberId);
+                                const canMoveUp = idx > 0;
+                                const canMoveDown = idx < folderTemplates.length - 1;
+                                html += `
+                                <div class="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: ${style.color}"></span>
+                                            <span class="text-sm text-slate-700 truncate">${t.title}</span>
+                                        </div>
+                                        <div class="flex gap-1 flex-shrink-0 items-center">
+                                            <button onclick="App.moveTemplate('${t.id}', 'up')" class="text-xs text-slate-400 hover:text-slate-600 px-1 ${canMoveUp ? '' : 'opacity-30 cursor-not-allowed'}" ${canMoveUp ? '' : 'disabled'}>↑</button>
+                                            <button onclick="App.moveTemplate('${t.id}', 'down')" class="text-xs text-slate-400 hover:text-slate-600 px-1 ${canMoveDown ? '' : 'opacity-30 cursor-not-allowed'}" ${canMoveDown ? '' : 'disabled'}>↓</button>
+                                            <button onclick="App.useTemplate('${t.id}')" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">入力</button>
+                                            <button onclick="App.editTemplate('${t.id}')" class="text-xs text-slate-500 hover:text-slate-700">編集</button>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            });
+                            html += `</div>`;
+                        }
+                        html += `</div>`;
+                    });
+                    return html;
+                };
+                const templatesHtml = buildTemplatesHtml();
                 return `
                 <div class="flex flex-col gap-4">
                     <!-- スマホ: テンプレートを上に、PC: 今後の予定を上に -->
@@ -1220,9 +1357,12 @@
                     <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-1 lg:order-2">
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="font-bold text-slate-800">📋 テンプレート</h3>
-                            <button onclick="App.openAddTemplate()" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">+ 追加</button>
+                            <div class="flex gap-1">
+                                <button onclick="App.openAddFolder()" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">+ フォルダ</button>
+                                <button onclick="App.openAddTemplate()" class="text-xs bg-primary-500 text-white px-2 py-1 rounded hover:bg-primary-600">+ 追加</button>
+                            </div>
                         </div>
-                        <div class="space-y-2">${templatesHtml}</div>
+                        <div class="space-y-1">${templatesHtml}</div>
                     </div>
                     <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200 order-3">
                         <div class="flex items-center justify-between mb-3">
@@ -1593,6 +1733,14 @@
                 e.preventDefault();
                 const form = e.target;
                 const isAllDay = form.isAllDay.checked;
+                const folderId = form.folderId.value || null;
+                // 既存テンプレートのorder維持、新規はフォルダ内最大+1
+                const existing = id ? StateManager.findTemplate(id) : null;
+                let order = existing ? (existing.order || 0) : 0;
+                if (!existing) {
+                    const folderTemplates = StateManager.state.templates.filter(t => (t.folderId || null) === folderId);
+                    order = folderTemplates.length > 0 ? Math.max(...folderTemplates.map(t => t.order || 0)) + 1 : 0;
+                }
                 const data = {
                     id: id || Utils.generateId(),
                     title: form.title.value,
@@ -1600,7 +1748,9 @@
                     isAllDay: isAllDay,
                     startTime: isAllDay ? '' : form.startTime.value,
                     endTime: isAllDay ? '' : form.endTime.value,
-                    memo: form.memo.value
+                    memo: form.memo.value,
+                    folderId: folderId,
+                    order: order
                 };
                 if (id) StateManager.updateTemplate(id, data);
                 else StateManager.addTemplate(data);
@@ -1609,17 +1759,76 @@
                 this.render();
             },
             deleteTemplate(id) {
-                if (confirm('このテンプレートを削除しますか？')) {
-                    StateManager.deleteTemplate(id);
-                    CloudAPI.syncToCloud();
-                    ModalManager.close();
-                    this.render();
-                }
+                ModalManager.show('テンプレート削除', `
+                    <p class="text-sm text-slate-600 mb-4">このテンプレートを削除しますか？</p>
+                    <div class="flex gap-2 justify-end">
+                        <button onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button onclick="App.executeDeleteTemplate('${id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>
+                    </div>
+                `);
+            },
+            executeDeleteTemplate(id) {
+                StateManager.deleteTemplate(id);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
             },
             useTemplate(id) {
                 const template = StateManager.findTemplate(id);
                 if (!template) return;
                 SelectMode.start('template', id);
+            },
+            // Template Folders
+            openAddFolder() {
+                ModalManager.show('フォルダ追加', FormBuilder.folderForm());
+            },
+            editFolder(id) {
+                const folder = StateManager.findFolder(id);
+                if (folder) ModalManager.show('フォルダ編集', FormBuilder.folderForm(folder));
+            },
+            saveFolder(e, id) {
+                e.preventDefault();
+                const form = e.target;
+                const existing = id ? StateManager.findFolder(id) : null;
+                let order = existing ? (existing.order || 0) : 0;
+                if (!existing) {
+                    const folders = StateManager.state.templateFolders;
+                    order = folders.length > 0 ? Math.max(...folders.map(f => f.order || 0)) + 1 : 0;
+                }
+                const data = {
+                    id: id || Utils.generateId(),
+                    name: form.name.value,
+                    order: order
+                };
+                if (id) StateManager.updateFolder(id, data);
+                else StateManager.addFolder(data);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+            },
+            deleteFolder(id) {
+                ModalManager.show('フォルダ削除', `
+                    <p class="text-sm text-slate-600 mb-4">このフォルダを削除しますか？<br><span class="text-xs text-slate-500">（中のテンプレートは未分類に移動されます）</span></p>
+                    <div class="flex gap-2 justify-end">
+                        <button onclick="ModalManager.close()" class="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition">キャンセル</button>
+                        <button onclick="App.executeDeleteFolder('${id}')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">削除</button>
+                    </div>
+                `);
+            },
+            executeDeleteFolder(id) {
+                StateManager.deleteFolder(id);
+                CloudAPI.syncToCloud();
+                ModalManager.close();
+                this.render();
+            },
+            toggleFolder(id) {
+                StateManager.toggleFolderCollapse(id === 'null' ? null : id);
+                this.render();
+            },
+            moveTemplate(id, direction) {
+                StateManager.moveTemplate(id, direction);
+                CloudAPI.syncToCloud();
+                this.render();
             },
             // Settings
             showSettings() {
