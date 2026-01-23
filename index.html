@@ -375,7 +375,8 @@
                     members: this.state.members,
                     templates: this.state.templates,
                     templateFolders: this.state.templateFolders,
-                    lastCloudUpdate: this.state.lastCloudUpdate
+                    lastCloudUpdate: this.state.lastCloudUpdate,
+                    localModified: this.state.localModified
                 };
                 localStorage.setItem(Config.DATA_KEY, JSON.stringify(data));
             },
@@ -389,6 +390,7 @@
                     this.state.templates = data.templates || [];
                     this.state.templateFolders = data.templateFolders || [];
                     this.state.lastCloudUpdate = data.lastCloudUpdate || 0;
+                    this.state.localModified = data.localModified || false;
                 }
             },
             resetConfig() {
@@ -941,6 +943,10 @@
                         modals[modals.length - 1].remove();
                     }
                 }
+            },
+            closeAll() {
+                const modals = document.querySelectorAll('.fixed.inset-0');
+                modals.forEach(m => m.remove());
             }
         };
         // ============================================================
@@ -1770,7 +1776,7 @@
             executeDeleteTemplate(id) {
                 StateManager.deleteTemplate(id);
                 CloudAPI.syncToCloud();
-                ModalManager.close();
+                ModalManager.closeAll();
                 this.render();
             },
             useTemplate(id) {
@@ -1818,7 +1824,7 @@
             executeDeleteFolder(id) {
                 StateManager.deleteFolder(id);
                 CloudAPI.syncToCloud();
-                ModalManager.close();
+                ModalManager.closeAll();
                 this.render();
             },
             toggleFolder(id) {
