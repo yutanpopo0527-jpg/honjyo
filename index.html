@@ -249,18 +249,39 @@
         }
 
         /* Month View */
+        .days-header-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            border-top-left-radius: var(--radius);
+            border-top-right-radius: var(--radius);
+        }
+
         .month-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             gap: 0;
             background: var(--bg-surface);
-            border-radius: var(--radius);
-            overflow: hidden;
             border: 1px solid var(--border);
+            border-top: none;
+            border-bottom-left-radius: var(--radius);
+            border-bottom-right-radius: var(--radius);
+            overflow: hidden;
+
+            /* Fill fit */
+            flex: 1;
+            position: relative;
+            grid-template-rows: repeat(auto-fit, minmax(0, 1fr));
         }
 
         .month-grid-wrapper {
             position: relative;
+            height: calc(100vh - 120px);
+            /* Adjust based on header height */
+            display: flex;
+            flex-direction: column;
         }
 
         .multi-day-overlay {
@@ -315,18 +336,24 @@
 
         .month-header {
             background: var(--bg-surface);
-            padding: 12px;
+            padding: 8px;
             text-align: center;
             font-weight: 500;
             color: var(--text-muted);
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .month-header:last-child {
+            border-right: none;
         }
 
         .month-day {
             background: var(--bg-surface);
-            min-height: 120px;
-            max-height: 120px;
-            height: 120px;
-            padding: 8px;
+            /* height: auto; -- removed fixed height for responsive grid */
+            min-height: 0;
+            padding: 4px;
+            /* Reduced padding */
             cursor: pointer;
             transition: background 0.2s;
             overflow: hidden;
@@ -717,11 +744,25 @@
                 padding-bottom: 100px;
             }
 
+            .month-grid-wrapper {
+                height: calc(100vh - 140px);
+                /* Adjust for mobile header/nav */
+            }
+
             .month-day {
-                min-height: 80px;
-                max-height: 80px;
-                height: 80px;
+                min-height: 0;
+                max-height: none;
+                height: auto;
                 overflow: hidden;
+            }
+
+            .event-chip {
+                font-size: 0.65rem;
+                /* Smaller font for mobile */
+                padding: 1px 4px;
+                letter-spacing: -0.03em;
+                /* Tighter spacing to fit more chars */
+                line-height: 1.2;
             }
 
             .header-date {
@@ -1409,11 +1450,18 @@
                 gridDates.push(`${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
             }
 
-            let html = '<div class="month-grid-wrapper"><div class="month-grid">';
+            let html = '<div class="month-grid-wrapper">';
+
+            // Header separated from grid content
+            html += '<div class="days-header-grid">';
             WEEKDAYS.forEach((w, i) => {
                 const color = i === 0 ? '#dc3545' : (i === 6 ? '#4285f4' : 'var(--text-muted)');
                 html += `<div class="month-header" style="color:${color};">${w}</div>`;
             });
+            html += '</div>'; // header close
+
+            // Grid content
+            html += '<div class="month-grid">';
 
             // Render day cells
             gridDates.forEach((dateStr, index) => {
@@ -1425,11 +1473,11 @@
                 html += renderMonthDay(cellDate.getDate(), dateStr, isOtherMonth, isToday, gridDates);
             });
 
-            html += '</div>';
-
-            // Add multi-day event overlay
+            // Add multi-day event overlay INSIDE the grid (relative container)
             html += '<div class="multi-day-overlay" id="multiDayOverlay"></div>';
-            html += '</div>';
+
+            html += '</div>'; // grid close
+            html += '</div>'; // wrapper close
 
             container.innerHTML = html;
 
@@ -1521,7 +1569,8 @@
             const firstCell = cells[0];
             const cellWidth = firstCell.offsetWidth;
             const cellHeight = firstCell.offsetHeight;
-            const headerHeight = grid.querySelector('.month-header')?.offsetHeight || 40;
+            // Header is now outside the grid, so relative top starts at 0
+            const headerHeight = 0;
 
             // Find all multi-day events
             const multiDayEvents = state.events.filter(e => {
@@ -1639,8 +1688,8 @@
             eventsHtml += singleDayEvents.slice(0, holiday ? 2 : 3).map(e => {
                 const cal = state.calendars.find(c => c.id === e.calendarId);
                 const color = e.color || (cal ? cal.color : '#4285f4');
-                // Hide time on mobile/tablet (screen width <= 768px)
-                const isMobile = window.innerWidth <= 768;
+                // Hide time on mobile/tablet (screen width <= 1024px)
+                const isMobile = window.innerWidth <= 1024;
                 const time = e.allDay || isMobile ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
                 const clsName = e.allDay ? 'event-chip all-day' : 'event-chip timed';
                 return `<div class="${clsName}" style="background:${e.allDay ? color : 'transparent'};color:${e.allDay ? '#fff' : color};" data-id="${e.id}" data-original-id="${e.originalId || ''}">${time}${e.title}</div>`;
