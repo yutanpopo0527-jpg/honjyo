@@ -325,10 +325,12 @@
             padding: 8px;
             cursor: pointer;
             transition: background 0.2s;
-            overflow: visible;
+            overflow: hidden;
             position: relative;
             border-right: 1px solid var(--border);
             border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
         }
 
         .month-day:nth-child(7n) {
@@ -704,8 +706,10 @@
                 left: 0;
                 top: 60px;
                 bottom: 0;
+                width: 280px;
                 z-index: 99;
                 overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
             }
 
             .month-day {
@@ -767,7 +771,7 @@
 <body>
     <header>
         <button class="nav-btn" id="menuBtn">☰</button>
-        <span class="logo">ファミリーカレンダー</span>
+        <span class="logo">Ultimate Calendar</span>
         <div class="nav-btns">
             <button class="nav-btn" id="todayBtn">今日</button>
             <button class="nav-btn" id="prevBtn">◀</button>
