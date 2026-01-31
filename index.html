@@ -5,6 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ultimate Calendar</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <style>
         :root {
             --primary: #4285f4;
@@ -701,10 +705,14 @@
                 top: 60px;
                 bottom: 0;
                 z-index: 99;
+                overflow-y: auto;
             }
 
             .month-day {
                 min-height: 80px;
+                max-height: 80px;
+                height: 80px;
+                overflow: hidden;
             }
 
             .header-date {
@@ -759,7 +767,7 @@
 <body>
     <header>
         <button class="nav-btn" id="menuBtn">☰</button>
-        <span class="logo">📅 Ultimate Calendar</span>
+        <span class="logo">ファミリーカレンダー</span>
         <div class="nav-btns">
             <button class="nav-btn" id="todayBtn">今日</button>
             <button class="nav-btn" id="prevBtn">◀</button>
@@ -1604,7 +1612,7 @@
 
             return `<div class="${cls}" data-date="${dateStr}">
     ${dayHeader}
-    ${eventsHtml}
+    <div style="overflow:hidden;flex:1;min-height:0;">${eventsHtml}</div>
   </div>`;
         }
 
