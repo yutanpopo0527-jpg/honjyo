@@ -1802,9 +1802,9 @@
                 return a.start.localeCompare(b.start);
             });
 
-            // Mobile: 3, Tablet/PC: 6. Reduce by 1 if holiday (due to layout)
+            // Mobile: 5, Tablet/PC: 6. Reduce by 1 if holiday (due to layout)
             const isMobile = window.innerWidth <= 768;
-            const baseLimit = isMobile ? 3 : 6;
+            const baseLimit = isMobile ? 5 : 6;
             const maxEvents = holiday ? baseLimit - 1 : baseLimit;
 
             eventsHtml += singleDayEvents.slice(0, maxEvents).map(e => {
@@ -2841,7 +2841,11 @@
 
         function parseIcs(content) {
             const events = [];
-            const vevents = content.split('BEGIN:VEVENT');
+
+            // Unfold lines: lines starting with space/tab are continuations
+            const unfoldedContent = content.replace(/\r?\n[\t ]/g, '');
+
+            const vevents = unfoldedContent.split('BEGIN:VEVENT');
 
             for (let i = 1; i < vevents.length; i++) {
                 const vevent = vevents[i].split('END:VEVENT')[0];
@@ -2850,31 +2854,62 @@
                 let title = '', description = '', start = '', end = '', allDay = false;
 
                 lines.forEach(line => {
-                    if (line.startsWith('SUMMARY:')) {
-                        title = line.substring(8);
-                    } else if (line.startsWith('DESCRIPTION:')) {
-                        description = line.substring(12).replace(/\\n/g, '\n');
-                    } else if (line.startsWith('DTSTART;VALUE=DATE:')) {
-                        const d = line.substring(19);
-                        start = `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}`;
-                        allDay = true;
-                    } else if (line.startsWith('DTSTART:')) {
-                        const d = line.substring(8);
-                        if (d.length >= 15) {
-                            start = `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}T${d.substring(9, 11)}:${d.substring(11, 13)}:00`;
+                    // Handle SUMMARY (may have parameters like SUMMARY;LANGUAGE=ja:...)
+                    if (line.startsWith('SUMMARY')) {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx !== -1) {
+                            title = line.substring(colonIdx + 1);
                         }
-                    } else if (line.startsWith('DTEND;VALUE=DATE:')) {
-                        const d = line.substring(17);
-                        end = `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}`;
-                    } else if (line.startsWith('DTEND:')) {
-                        const d = line.substring(6);
-                        if (d.length >= 15) {
-                            end = `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}T${d.substring(9, 11)}:${d.substring(11, 13)}:00`;
+                    } else if (line.startsWith('DESCRIPTION')) {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx !== -1) {
+                            description = line.substring(colonIdx + 1).replace(/\\n/g, '\n').replace(/\\,/g, ',');
+                        }
+                    } else if (line.startsWith('DTSTART')) {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx !== -1) {
+                            const params = line.substring(0, colonIdx);
+                            const value = line.substring(colonIdx + 1);
+
+                            if (params.includes('VALUE=DATE') || value.length === 8) {
+                                // All-day event: YYYYMMDD
+                                start = `${value.substring(0, 4)}-${value.substring(4, 6)}-${value.substring(6, 8)}`;
+                                allDay = true;
+                            } else {
+                                // Date-time: YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ
+                                const cleanValue = value.replace('Z', '');
+                                if (cleanValue.length >= 15) {
+                                    start = `${cleanValue.substring(0, 4)}-${cleanValue.substring(4, 6)}-${cleanValue.substring(6, 8)}T${cleanValue.substring(9, 11)}:${cleanValue.substring(11, 13)}:00`;
+                                }
+                            }
+                        }
+                    } else if (line.startsWith('DTEND')) {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx !== -1) {
+                            const params = line.substring(0, colonIdx);
+                            const value = line.substring(colonIdx + 1);
+
+                            if (params.includes('VALUE=DATE') || value.length === 8) {
+                                // All-day event end: YYYYMMDD (usually next day in ICS)
+                                end = `${value.substring(0, 4)}-${value.substring(4, 6)}-${value.substring(6, 8)}`;
+                            } else {
+                                const cleanValue = value.replace('Z', '');
+                                if (cleanValue.length >= 15) {
+                                    end = `${cleanValue.substring(0, 4)}-${cleanValue.substring(4, 6)}-${cleanValue.substring(6, 8)}T${cleanValue.substring(9, 11)}:${cleanValue.substring(11, 13)}:00`;
+                                }
+                            }
                         }
                     }
                 });
 
                 if (title && start) {
+                    // For all-day events, ICS uses exclusive end date, adjust it
+                    if (allDay && end) {
+                        const endDate = new Date(end);
+                        endDate.setDate(endDate.getDate() - 1);
+                        end = formatDate(endDate);
+                    }
+
                     events.push({
                         id: uuid(),
                         title,
