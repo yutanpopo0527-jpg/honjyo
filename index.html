@@ -404,13 +404,7 @@
         }
 
         .event-chip.timed::before {
-            content: '';
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            margin-right: 4px;
-            background: currentColor;
+            display: none;
         }
 
         /* Week View */
@@ -737,6 +731,26 @@
             .nav-btn {
                 padding: 6px 10px;
                 font-size: 0.85rem;
+            }
+
+            /* Smaller sidebar text on mobile */
+            .sidebar {
+                font-size: 0.85rem;
+            }
+
+            .sidebar .section-title {
+                font-size: 0.75rem;
+            }
+
+            .sidebar .add-btn {
+                font-size: 0.9rem;
+                padding: 10px;
+            }
+
+            .sidebar .template-item,
+            .sidebar .cal-item {
+                font-size: 0.8rem;
+                padding: 6px 8px;
             }
         }
 
@@ -1949,6 +1963,12 @@
         function initTouchDrag(el, type, data) {
             let touchStartTime = 0;
 
+            // Prevent context menu on long press
+            el.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                return false;
+            });
+
             el.addEventListener('touchstart', e => {
                 touchStartTime = Date.now();
                 const touch = e.touches[0];
@@ -1967,6 +1987,12 @@
                         touchDragState.eventId = null;
                         touchDragState.templateId = data.templateId;
                         touchDragState.folderId = data.folderId;
+
+                        // Close sidebar when dragging template on mobile
+                        const sidebar = document.querySelector('.sidebar');
+                        if (sidebar && sidebar.classList.contains('mobile-show')) {
+                            sidebar.classList.remove('mobile-show');
+                        }
                     }
 
                     // Create visual drag indicator
@@ -1998,7 +2024,7 @@
                     if (navigator.vibrate) navigator.vibrate(50);
 
                     el.style.opacity = '0.5';
-                }, 500);
+                }, 300); // Reduced from 500ms for better responsiveness
             }, { passive: false });
 
             el.addEventListener('touchmove', e => {
