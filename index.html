@@ -2580,6 +2580,12 @@
                     const cal = state.calendars.find(c => c.id === calId);
                     if (cal) {
                         cal.color = color;
+                        // Update all events belonging to this calendar
+                        state.events.forEach(event => {
+                            if (event.calendarId === calId) {
+                                event.color = color;
+                            }
+                        });
                         saveData();
                         renderCalendarManagerList();
                         renderCalendarList();
@@ -2820,14 +2826,17 @@
 
             dialog.querySelector('#icsImportConfirmBtn').addEventListener('click', () => {
                 const calendarId = dialog.querySelector('#icsImportCalendarSelect').value;
+                const calendar = state.calendars.find(c => c.id === calendarId);
+                const calendarColor = calendar ? calendar.color : '#4285f4';
                 events.forEach(ev => {
                     ev.calendarId = calendarId;
+                    ev.color = calendarColor;
                 });
                 state.events.push(...events);
                 saveData();
                 renderAll();
                 dialog.remove();
-                alert(`${events.length}件の予定を「${state.calendars.find(c => c.id === calendarId).name}」にインポートしました`);
+                alert(`${events.length}件の予定を「${calendar ? calendar.name : 'カレンダー'}」にインポートしました`);
             });
 
             dialog.querySelector('#icsImportCancelBtn').addEventListener('click', () => {
