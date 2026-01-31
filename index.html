@@ -137,7 +137,6 @@
             cursor: pointer;
             margin-bottom: 16px;
             display: flex;
-            align-items: center;
             justify-content: center;
             gap: 8px;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -146,6 +145,98 @@
         .add-btn:hover {
             transform: translateY(-2px);
             box-shadow: var(--shadow);
+        }
+
+        .more-events {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding-left: 4px;
+            margin-top: 2px;
+            transition: color 0.2s;
+            position: relative;
+            z-index: 105;
+            pointer-events: auto !important;
+        }
+
+        .more-events:hover {
+            color: var(--primary-light, #8ab4f8);
+            text-decoration: underline;
+        }
+
+        /* Daily View List Styles */
+        .daily-event-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 10px 0;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .daily-event-item {
+            display: flex;
+            gap: 12px;
+            padding: 8px 12px;
+            border-left: 4px solid transparent;
+            background: var(--glass);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .daily-event-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .daily-event-time {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            width: 50px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+            line-height: 1.2;
+        }
+
+        .daily-event-body {
+            flex: 1;
+        }
+
+        .daily-event-title {
+            font-weight: 500;
+            font-size: 1rem;
+            margin-bottom: 2px;
+        }
+
+        .daily-event-cal-name {
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .daily-add-btn {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            border: none;
+            transition: transform 0.2s;
+            z-index: 10;
+        }
+
+        .daily-add-btn:active {
+            transform: scale(0.95);
         }
 
 
@@ -1067,6 +1158,23 @@
         </div>
     </div>
 
+    <!-- Daily View Modal -->
+    <div class="modal-overlay" id="dailyViewModal">
+        <div class="modal" style="max-width: 400px; max-height: 80vh; position: relative;">
+            <div class="modal-header">
+                <span class="modal-title" id="dailyViewTitle">1月1日 月曜日</span>
+                <button class="modal-close"
+                    onclick="document.getElementById('dailyViewModal').classList.remove('show')">×</button>
+            </div>
+            <div class="modal-body" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+                <div id="dailyEventList" class="daily-event-list" style="padding: 16px; overflow-y: auto; flex: 1;">
+                    <!-- Events will be here -->
+                </div>
+            </div>
+            <button id="dailyAddBtn" class="daily-add-btn">+</button>
+        </div>
+    </div>
+
     <script>
         const COLORS = ['#4285f4', '#0f9d58', '#f4b400', '#db4437', '#673ab7', '#e91e63', '#00bcd4', '#ff5722', '#795548', '#607d8b'];
         const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1553,6 +1661,8 @@
                 const eventId = el.dataset.id || el.dataset.originalId;
                 initTouchDrag(el, 'event', { eventId });
             });
+
+
         }
 
         function renderMultiDayEvents(gridDates) {
@@ -1685,19 +1795,30 @@
                 return !(e.allDay && startDate !== endDate);
             });
 
-            eventsHtml += singleDayEvents.slice(0, holiday ? 2 : 3).map(e => {
+            // Sort: All-day first, then time
+            singleDayEvents.sort((a, b) => {
+                if (a.allDay && !b.allDay) return -1;
+                if (!a.allDay && b.allDay) return 1;
+                return a.start.localeCompare(b.start);
+            });
+
+            // Mobile: 3, Tablet/PC: 6. Reduce by 1 if holiday (due to layout)
+            const isMobile = window.innerWidth <= 768;
+            const baseLimit = isMobile ? 3 : 6;
+            const maxEvents = holiday ? baseLimit - 1 : baseLimit;
+
+            eventsHtml += singleDayEvents.slice(0, maxEvents).map(e => {
                 const cal = state.calendars.find(c => c.id === e.calendarId);
                 const color = e.color || (cal ? cal.color : '#4285f4');
                 // Hide time on mobile/tablet (screen width <= 1024px)
-                const isMobile = window.innerWidth <= 1024;
-                const time = e.allDay || isMobile ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
+                const isSmallScreen = window.innerWidth <= 1024;
+                const time = e.allDay || isSmallScreen ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
                 const clsName = e.allDay ? 'event-chip all-day' : 'event-chip timed';
                 return `<div class="${clsName}" style="background:${e.allDay ? color : 'transparent'};color:${e.allDay ? '#fff' : color};" data-id="${e.id}" data-original-id="${e.originalId || ''}">${time}${e.title}</div>`;
             }).join('');
 
-            const maxEvents = holiday ? 2 : 3;
-            if (events.length > maxEvents) {
-                eventsHtml += `<div style="font-size:0.7rem;color:var(--text-muted);">+${events.length - maxEvents}件</div>`;
+            if (singleDayEvents.length > maxEvents) {
+                eventsHtml += `<div class="more-events" data-date="${dateStr}" onclick="event.stopPropagation(); window.openDailyView && window.openDailyView('${dateStr}')" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">+${singleDayEvents.length - maxEvents}件</div>`;
             }
 
             return `<div class="${cls}" data-date="${dateStr}">
@@ -2218,6 +2339,67 @@
             });
         }
 
+        function openDailyView(dateStr) {
+            const date = parseDate(dateStr);
+            const events = getEventsForDate(dateStr);
+
+            // Sort by time
+            events.sort((a, b) => {
+                if (a.allDay && !b.allDay) return -1;
+                if (!a.allDay && b.allDay) return 1;
+                return a.start.localeCompare(b.start);
+            });
+
+            // Format Title
+            const days = ['日', '月', '火', '水', '木', '金', '土'];
+            const titleStr = `${date.getMonth() + 1}月${date.getDate()}日 ${days[date.getDay()]}曜日`;
+            document.getElementById('dailyViewTitle').textContent = titleStr;
+
+            // Set Add Button Action
+            const addBtn = document.getElementById('dailyAddBtn');
+            addBtn.onclick = () => {
+                document.getElementById('dailyViewModal').classList.remove('show');
+                openEventModal(null, dateStr);
+            };
+
+            // Render List
+            const listContainer = document.getElementById('dailyEventList');
+            listContainer.innerHTML = events.map(e => {
+                const cal = state.calendars.find(c => c.id === e.calendarId);
+                const color = e.color || (cal ? cal.color : '#4285f4');
+                const calName = cal ? cal.name : '';
+
+                let timeHtml = '';
+                if (e.allDay) {
+                    timeHtml = '<span>終日</span>';
+                } else {
+                    const startT = e.start.split('T')[1].substring(0, 5);
+                    const endT = e.end.split('T')[1].substring(0, 5);
+                    timeHtml = `<span>${startT}</span><span style="font-size:0.7em">${endT}</span>`;
+                }
+
+                return `
+                <div class="daily-event-item" style="border-left-color:${color}" onclick="closeDailyViewAndEdit('${e.id}')">
+                    <div class="daily-event-time">${timeHtml}</div>
+                    <div class="daily-event-body">
+                        <div class="daily-event-title">${e.title}</div>
+                        <div class="daily-event-cal-name" style="color:${color}">${calName}</div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            if (events.length === 0) {
+                listContainer.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">予定はありません</div>';
+            }
+
+            document.getElementById('dailyViewModal').classList.add('show');
+        }
+
+        function closeDailyViewAndEdit(eventId) {
+            document.getElementById('dailyViewModal').classList.remove('show');
+            openEventModal(eventId);
+        }
+
         function saveAsTemplate() {
             const title = document.getElementById('eventTitle').value.trim();
             if (!title) { alert('タイトルを入力してください'); return; }
@@ -2542,6 +2724,8 @@
             document.getElementById('saveSyncSettingsBtn').addEventListener('click', saveSyncSettings);
             document.getElementById('syncUploadBtn').addEventListener('click', () => syncUpload(false));
             document.getElementById('syncDownloadBtn').addEventListener('click', syncDownload);
+
+
 
             // Close modals on overlay click
             document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -2911,6 +3095,26 @@
             }
             renderAll();
         }
+
+        // --- Fix for +More click issue ---
+        // Ensure openDailyView is global
+        window.openDailyView = openDailyView;
+
+        // Add aggressive event listeners to capture phase
+        // This will bypass any stopPropagation from children or preventDefault from parents
+        ['click', 'touchend'].forEach(evtName => {
+            document.addEventListener(evtName, e => {
+                const target = e.target.closest('.more-events');
+                if (target && target.dataset.date) {
+                    console.log('Force handling more-events click:', evtName);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    openDailyView(target.dataset.date);
+                }
+            }, { capture: true, passive: false });
+        });
+        // --------------------------------
 
         // Initialize app
         init();
