@@ -1616,7 +1616,9 @@
             eventsHtml += singleDayEvents.slice(0, holiday ? 2 : 3).map(e => {
                 const cal = state.calendars.find(c => c.id === e.calendarId);
                 const color = e.color || (cal ? cal.color : '#4285f4');
-                const time = e.allDay ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
+                // Hide time on mobile/tablet (screen width <= 768px)
+                const isMobile = window.innerWidth <= 768;
+                const time = e.allDay || isMobile ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
                 const clsName = e.allDay ? 'event-chip all-day' : 'event-chip timed';
                 return `<div class="${clsName}" style="background:${e.allDay ? color : 'transparent'};color:${e.allDay ? '#fff' : color};" data-id="${e.id}" data-original-id="${e.originalId || ''}">${time}${e.title}</div>`;
             }).join('');
