@@ -244,10 +244,65 @@
         .month-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 1px;
-            background: var(--border);
+            gap: 0;
+            background: var(--bg-surface);
             border-radius: var(--radius);
             overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .month-grid-wrapper {
+            position: relative;
+        }
+
+        .multi-day-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .multi-day-overlay>* {
+            pointer-events: auto;
+        }
+
+        .multi-day-events {
+            position: absolute;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .multi-day-event {
+            position: absolute;
+            height: 20px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #fff;
+            padding: 2px 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        .multi-day-event.start {
+            border-top-left-radius: 4px;
+            border-bottom-left-radius: 4px;
+        }
+
+        .multi-day-event.end {
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+        }
+
+        .multi-day-event.middle {
+            border-radius: 0;
         }
 
         .month-header {
@@ -261,9 +316,19 @@
         .month-day {
             background: var(--bg-surface);
             min-height: 120px;
+            max-height: 120px;
+            height: 120px;
             padding: 8px;
             cursor: pointer;
             transition: background 0.2s;
+            overflow: visible;
+            position: relative;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .month-day:nth-child(7n) {
+            border-right: none;
         }
 
         .month-day:hover {
@@ -295,6 +360,22 @@
             justify-content: center;
         }
 
+        .holiday-label {
+            font-size: 0.65rem;
+            color: #dc3545;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70px;
+        }
+
+        @media (max-width: 768px) {
+            .holiday-label {
+                font-size: 0.5rem;
+                max-width: 40px;
+            }
+        }
+
         .event-chip {
             font-size: 0.75rem;
             padding: 2px 6px;
@@ -302,8 +383,8 @@
             margin-bottom: 2px;
             white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis;
             cursor: pointer;
+            max-width: 100%;
         }
 
         .event-chip.all-day {
@@ -728,6 +809,17 @@
             </div>
             <input type="file" id="icsFileInput" accept=".ics" style="display:none;">
             <input type="file" id="jsonFileInput" accept=".json" style="display:none;">
+
+            <div class="section-title" style="margin-top:20px;">クラウド同期</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <button class="nav-btn" id="syncSettingsBtn" style="width:100%;text-align:left;padding:8px 12px;">⚙️
+                    同期設定</button>
+                <button class="nav-btn" id="syncUploadBtn" style="width:100%;text-align:left;padding:8px 12px;">☁️
+                    クラウドにアップロード</button>
+                <button class="nav-btn" id="syncDownloadBtn" style="width:100%;text-align:left;padding:8px 12px;">📥
+                    クラウドから取得</button>
+                <div id="syncStatus" style="font-size:0.75rem;color:var(--text-muted);padding:4px 8px;"></div>
+            </div>
         </aside>
 
         <main class="main-content" id="mainContent"></main>
@@ -864,6 +956,39 @@
         </div>
     </div>
 
+    <!-- Sync Settings Modal -->
+    <div class="modal-overlay" id="syncSettingsModal">
+        <div class="modal" style="max-width:500px;">
+            <div class="modal-header">
+                <span class="modal-title">クラウド同期設定</span>
+                <button class="modal-close" id="closeSyncSettingsModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">JSONBin.io マスターキー</label>
+                    <input type="password" class="form-input" id="jsonbinApiKey" placeholder="$2a$10$...">
+                    <small style="color:var(--text-muted);display:block;margin-top:4px;">
+                        <a href="https://jsonbin.io/" target="_blank"
+                            style="color:var(--primary);">JSONBin.io</a>でアカウント作成後、API Keysからマスターキーをコピー
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bin ID（既存のデータを使う場合）</label>
+                    <input type="text" class="form-input" id="jsonbinBinId" placeholder="60xxxxxxxx（空の場合は新規作成）">
+                    <small style="color:var(--text-muted);display:block;margin-top:4px;">
+                        他のデバイスと同期する場合は同じBin IDを入力
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="autoSyncEnabled"> 自動同期を有効にする
+                    </label>
+                </div>
+                <button class="btn btn-primary" id="saveSyncSettingsBtn" style="width:100%;">設定を保存</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const COLORS = ['#4285f4', '#0f9d58', '#f4b400', '#db4437', '#673ab7', '#e91e63', '#00bcd4', '#ff5722', '#795548', '#607d8b'];
         const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -928,7 +1053,13 @@
             calendars: [],
             events: [],
             templateFolders: [],
-            theme: 'dark'
+            theme: 'dark',
+            // Sync settings
+            syncSettings: {
+                apiKey: '',
+                binId: '',
+                autoSync: false
+            }
         };
 
         // Initialize
@@ -959,6 +1090,14 @@
                         state.events = Array.isArray(data.events) ? data.events : [];
                         state.templateFolders = Array.isArray(data.templateFolders) ? data.templateFolders : [];
                         state.theme = data.theme || 'dark';
+                        // Load sync settings
+                        if (data.syncSettings) {
+                            state.syncSettings = {
+                                apiKey: data.syncSettings.apiKey || '',
+                                binId: data.syncSettings.binId || '',
+                                autoSync: data.syncSettings.autoSync || false
+                            };
+                        }
                     }
                 }
             } catch (e) {
@@ -1004,6 +1143,7 @@
                     events: state.events,
                     templateFolders: state.templateFolders,
                     theme: state.theme,
+                    syncSettings: state.syncSettings,
                     lastSaved: new Date().toISOString()
                 });
 
@@ -1012,6 +1152,11 @@
 
                 // Also save backup (for recovery)
                 localStorage.setItem('calendarData_backup', dataStr);
+
+                // Auto-sync if enabled
+                if (state.syncSettings.autoSync && state.syncSettings.apiKey && state.syncSettings.binId) {
+                    syncUpload(true); // silent mode
+                }
             } catch (e) {
                 console.error('Data save error:', e);
                 // If localStorage is full, try to at least notify user
@@ -1195,26 +1340,20 @@
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const daysInPrevMonth = new Date(year, month, 0).getDate();
 
-            let html = '<div class="month-grid">';
-            WEEKDAYS.forEach((w, i) => {
-                const color = i === 0 ? '#dc3545' : (i === 6 ? '#4285f4' : 'var(--text-muted)');
-                html += `<div class="month-header" style="color:${color};">${w}</div>`;
-            });
+            // Build array of all dates in the grid
+            const gridDates = [];
 
             // Previous month
             for (let i = firstDay - 1; i >= 0; i--) {
                 const day = daysInPrevMonth - i;
                 const prevMonth = month === 0 ? 12 : month;
                 const prevYear = month === 0 ? year - 1 : year;
-                const dateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                html += renderMonthDay(day, dateStr, true, false);
+                gridDates.push(`${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
             }
 
             // Current month
             for (let day = 1; day <= daysInMonth; day++) {
-                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-                html += renderMonthDay(day, dateStr, false, isToday);
+                gridDates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
             }
 
             // Next month
@@ -1224,17 +1363,41 @@
             for (let day = 1; day <= remaining; day++) {
                 const nextMonth = month === 11 ? 1 : month + 2;
                 const nextYear = month === 11 ? year + 1 : year;
-                const dateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                html += renderMonthDay(day, dateStr, true, false);
+                gridDates.push(`${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
             }
 
+            let html = '<div class="month-grid-wrapper"><div class="month-grid">';
+            WEEKDAYS.forEach((w, i) => {
+                const color = i === 0 ? '#dc3545' : (i === 6 ? '#4285f4' : 'var(--text-muted)');
+                html += `<div class="month-header" style="color:${color};">${w}</div>`;
+            });
+
+            // Render day cells
+            gridDates.forEach((dateStr, index) => {
+                const cellDate = parseDate(dateStr);
+                const isOtherMonth = cellDate.getMonth() !== month;
+                const isToday = today.getFullYear() === cellDate.getFullYear() &&
+                    today.getMonth() === cellDate.getMonth() &&
+                    today.getDate() === cellDate.getDate();
+                html += renderMonthDay(cellDate.getDate(), dateStr, isOtherMonth, isToday, gridDates);
+            });
+
             html += '</div>';
+
+            // Add multi-day event overlay
+            html += '<div class="multi-day-overlay" id="multiDayOverlay"></div>';
+            html += '</div>';
+
             container.innerHTML = html;
+
+            // Render multi-day events after DOM is ready
+            setTimeout(() => renderMultiDayEvents(gridDates), 0);
 
             // Bind day clicks
             container.querySelectorAll('.month-day').forEach(el => {
                 el.addEventListener('click', e => {
                     if (e.target.classList.contains('event-chip')) return;
+                    if (e.target.classList.contains('multi-day-bar')) return;
                     const date = el.dataset.date;
                     openEventModal(null, date);
                 });
@@ -1253,6 +1416,17 @@
                     e.preventDefault();
                     el.style.background = '';
                     el.style.opacity = '';
+
+                    // Check for event drag (move/copy)
+                    const eventId = e.dataTransfer.getData('eventId');
+                    if (eventId) {
+                        const targetDate = el.dataset.date;
+                        const isCopy = e.ctrlKey || e.metaKey;
+                        moveOrCopyEvent(eventId, targetDate, isCopy);
+                        return;
+                    }
+
+                    // Check for template drag
                     const templateId = e.dataTransfer.getData('templateId');
                     const folderId = e.dataTransfer.getData('folderId');
                     if (templateId && folderId) {
@@ -1261,8 +1435,114 @@
                 });
             });
 
-            // Bind event clicks
+            // Bind event clicks and drag
             container.querySelectorAll('.event-chip').forEach(el => {
+                el.setAttribute('draggable', 'true');
+
+                el.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const id = el.dataset.id;
+                    const event = state.events.find(ev => ev.id === id || ev.id === el.dataset.originalId);
+                    if (event) openEventModal(event.id);
+                });
+
+                el.addEventListener('dragstart', e => {
+                    e.stopPropagation();
+                    const eventId = el.dataset.id || el.dataset.originalId;
+                    e.dataTransfer.setData('eventId', eventId);
+                    e.dataTransfer.effectAllowed = 'copyMove';
+                    el.style.opacity = '0.5';
+                });
+
+                el.addEventListener('dragend', e => {
+                    el.style.opacity = '1';
+                });
+            });
+        }
+
+        function renderMultiDayEvents(gridDates) {
+            const overlay = document.getElementById('multiDayOverlay');
+            if (!overlay) return;
+
+            const grid = document.querySelector('.month-grid');
+            if (!grid) return;
+
+            const cells = grid.querySelectorAll('.month-day');
+            if (cells.length === 0) return;
+
+            // Get cell dimensions
+            const firstCell = cells[0];
+            const cellWidth = firstCell.offsetWidth;
+            const cellHeight = firstCell.offsetHeight;
+            const headerHeight = grid.querySelector('.month-header')?.offsetHeight || 40;
+
+            // Find all multi-day events
+            const multiDayEvents = state.events.filter(e => {
+                if (!e.allDay) return false;
+                if (!state.calendars.find(c => c.id === e.calendarId && c.visible)) return false;
+                const startDate = e.start.split('T')[0];
+                const endDate = e.end.split('T')[0];
+                return startDate !== endDate;
+            });
+
+            let overlayHtml = '';
+
+            multiDayEvents.forEach(event => {
+                const cal = state.calendars.find(c => c.id === event.calendarId);
+                const color = event.color || (cal ? cal.color : '#4285f4');
+                const startDate = event.start.split('T')[0];
+                const endDate = event.end.split('T')[0];
+
+                // Find start and end indices in grid
+                let startIdx = gridDates.indexOf(startDate);
+                let endIdx = gridDates.indexOf(endDate);
+
+                // Clamp to grid boundaries
+                if (startIdx < 0) startIdx = 0;
+                if (endIdx < 0 || endIdx >= gridDates.length) endIdx = gridDates.length - 1;
+                if (startIdx > endIdx) return;
+
+                // Calculate rows this event spans
+                const startRow = Math.floor(startIdx / 7);
+                const endRow = Math.floor(endIdx / 7);
+
+                for (let row = startRow; row <= endRow; row++) {
+                    const rowStartIdx = row * 7;
+                    const rowEndIdx = rowStartIdx + 6;
+
+                    const barStartIdx = Math.max(startIdx, rowStartIdx);
+                    const barEndIdx = Math.min(endIdx, rowEndIdx);
+
+                    const barStartCol = barStartIdx % 7;
+                    const barEndCol = barEndIdx % 7;
+                    const spanCols = barEndCol - barStartCol + 1;
+
+                    const isFirstSegment = barStartIdx === startIdx;
+                    const isLastSegment = barEndIdx === endIdx;
+
+                    const left = barStartCol * cellWidth;
+                    const top = headerHeight + row * cellHeight + 28; // 28px offset for day number
+                    const width = spanCols * cellWidth;
+
+                    let borderRadius = '0';
+                    if (isFirstSegment && isLastSegment) {
+                        borderRadius = '4px';
+                    } else if (isFirstSegment) {
+                        borderRadius = '4px 0 0 4px';
+                    } else if (isLastSegment) {
+                        borderRadius = '0 4px 4px 0';
+                    }
+
+                    const title = isFirstSegment ? event.title : '';
+
+                    overlayHtml += `<div class="multi-day-bar" style="position:absolute;left:${left}px;top:${top}px;width:${width}px;height:20px;background:${color};color:#fff;border-radius:${borderRadius};font-size:0.75rem;padding:2px 6px;box-sizing:border-box;overflow:hidden;white-space:nowrap;cursor:pointer;z-index:10;" data-id="${event.id}" data-original-id="${event.originalId || ''}">${title}</div>`;
+                }
+            });
+
+            overlay.innerHTML = overlayHtml;
+
+            // Bind click events for multi-day bars
+            overlay.querySelectorAll('.multi-day-bar').forEach(el => {
                 el.addEventListener('click', e => {
                     e.stopPropagation();
                     const id = el.dataset.id;
@@ -1289,19 +1569,32 @@
             if (dayOfWeek === 0 || holiday) dayColor = '#dc3545';
             else if (dayOfWeek === 6) dayColor = '#4285f4';
 
-            let eventsHtml = '';
-
-            // Show holiday name
+            // Day header with holiday inline
+            let dayHeader = '';
             if (holiday) {
-                eventsHtml += `<div style="font-size:0.65rem;color:#dc3545;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${holiday}</div>`;
+                dayHeader = `<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                    <span class="${dayNumCls}" style="color:${dayColor};">${day}</span>
+                    <span class="holiday-label">${holiday}</span>
+                </div>`;
+            } else {
+                dayHeader = `<div class="${dayNumCls}" style="color:${dayColor};">${day}</div>`;
             }
 
-            eventsHtml += events.slice(0, holiday ? 2 : 3).map(e => {
+            let eventsHtml = '';
+
+            // Filter out multi-day events (they are rendered in overlay)
+            const singleDayEvents = events.filter(e => {
+                const startDate = e.start.split('T')[0];
+                const endDate = e.end.split('T')[0];
+                return !(e.allDay && startDate !== endDate);
+            });
+
+            eventsHtml += singleDayEvents.slice(0, holiday ? 2 : 3).map(e => {
                 const cal = state.calendars.find(c => c.id === e.calendarId);
                 const color = e.color || (cal ? cal.color : '#4285f4');
                 const time = e.allDay ? '' : e.start.split('T')[1]?.substring(0, 5) + ' ';
-                const cls = e.allDay ? 'event-chip all-day' : 'event-chip timed';
-                return `<div class="${cls}" style="background:${e.allDay ? color : 'transparent'};color:${e.allDay ? '#fff' : color};" data-id="${e.id}" data-original-id="${e.originalId || ''}">${time}${e.title.substring(0, 5)}</div>`;
+                const clsName = e.allDay ? 'event-chip all-day' : 'event-chip timed';
+                return `<div class="${clsName}" style="background:${e.allDay ? color : 'transparent'};color:${e.allDay ? '#fff' : color};" data-id="${e.id}" data-original-id="${e.originalId || ''}">${time}${e.title}</div>`;
             }).join('');
 
             const maxEvents = holiday ? 2 : 3;
@@ -1310,7 +1603,7 @@
             }
 
             return `<div class="${cls}" data-date="${dateStr}">
-    <div class="${dayNumCls}" style="color:${dayColor};">${day}</div>
+    ${dayHeader}
     ${eventsHtml}
   </div>`;
         }
@@ -1543,6 +1836,76 @@
         function closeEventModal() {
             document.getElementById('eventModal').classList.remove('show');
             state.editingEventId = null;
+        }
+
+        function moveOrCopyEvent(eventId, targetDate, isCopy) {
+            const event = state.events.find(e => e.id === eventId);
+            if (!event) {
+                console.log('Event not found:', eventId);
+                return;
+            }
+
+            // Calculate date difference
+            const originalStart = event.start.split('T')[0];
+            const originalEnd = event.end.split('T')[0];
+            const startDate = parseDate(originalStart);
+            const endDate = parseDate(originalEnd);
+            const targetDateObj = parseDate(targetDate);
+
+            // Calculate day difference
+            const dayDiff = Math.round((targetDateObj - startDate) / (1000 * 60 * 60 * 24));
+
+            console.log('moveOrCopyEvent:', { eventId, targetDate, isCopy, dayDiff, originalStart });
+
+            if (dayDiff === 0 && !isCopy) {
+                console.log('No change needed');
+                return;
+            }
+
+            // Calculate new dates using local timezone
+            const newStartDate = new Date(startDate);
+            newStartDate.setDate(newStartDate.getDate() + dayDiff);
+            const newEndDate = new Date(endDate);
+            newEndDate.setDate(newEndDate.getDate() + dayDiff);
+
+            // Format as local date (not UTC)
+            const formatLocalDate = d => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
+            const newStartStr = formatLocalDate(newStartDate);
+            const newEndStr = formatLocalDate(newEndDate);
+
+            // Preserve time part if exists
+            const startTime = event.start.includes('T') ? event.start.split('T')[1] : '';
+            const endTime = event.end.includes('T') ? event.end.split('T')[1] : '';
+
+            const newStart = startTime ? `${newStartStr}T${startTime}` : newStartStr;
+            const newEnd = endTime ? `${newEndStr}T${endTime}` : newEndStr;
+
+            console.log('New dates:', { newStart, newEnd });
+
+            if (isCopy) {
+                // Create a copy of the event
+                const newEvent = {
+                    ...event,
+                    id: uuid(),
+                    start: newStart,
+                    end: newEnd
+                };
+                delete newEvent.originalId; // Remove recurrence reference for copy
+                state.events.push(newEvent);
+            } else {
+                // Move the event
+                event.start = newStart;
+                event.end = newEnd;
+            }
+
+            saveData();
+            renderAll();
         }
 
         function saveAsTemplate() {
@@ -1861,6 +2224,15 @@
             });
             document.getElementById('jsonFileInput').addEventListener('change', importJson);
 
+            // Cloud sync
+            document.getElementById('syncSettingsBtn').addEventListener('click', openSyncSettings);
+            document.getElementById('closeSyncSettingsModal').addEventListener('click', () => {
+                document.getElementById('syncSettingsModal').classList.remove('show');
+            });
+            document.getElementById('saveSyncSettingsBtn').addEventListener('click', saveSyncSettings);
+            document.getElementById('syncUploadBtn').addEventListener('click', () => syncUpload(false));
+            document.getElementById('syncDownloadBtn').addEventListener('click', syncDownload);
+
             // Close modals on overlay click
             document.querySelectorAll('.modal-overlay').forEach(overlay => {
                 overlay.addEventListener('click', e => {
@@ -2026,6 +2398,140 @@
             };
             reader.readAsText(file);
             e.target.value = '';
+        }
+
+        // ===== JSONBin.io Cloud Sync =====
+        const JSONBIN_API_URL = 'https://api.jsonbin.io/v3';
+
+        function openSyncSettings() {
+            document.getElementById('jsonbinApiKey').value = state.syncSettings.apiKey;
+            document.getElementById('jsonbinBinId').value = state.syncSettings.binId;
+            document.getElementById('autoSyncEnabled').checked = state.syncSettings.autoSync;
+            document.getElementById('syncSettingsModal').classList.add('show');
+        }
+
+        function saveSyncSettings() {
+            state.syncSettings.apiKey = document.getElementById('jsonbinApiKey').value.trim();
+            state.syncSettings.binId = document.getElementById('jsonbinBinId').value.trim();
+            state.syncSettings.autoSync = document.getElementById('autoSyncEnabled').checked;
+            saveData();
+            document.getElementById('syncSettingsModal').classList.remove('show');
+            updateSyncStatus('設定を保存しました');
+            alert('同期設定を保存しました');
+        }
+
+        function updateSyncStatus(msg) {
+            const el = document.getElementById('syncStatus');
+            el.textContent = msg;
+            setTimeout(() => { el.textContent = ''; }, 5000);
+        }
+
+        async function syncUpload(silent = false) {
+            const { apiKey, binId } = state.syncSettings;
+
+            if (!apiKey) {
+                if (!silent) alert('マスターキーが設定されていません。同期設定を開いてください。');
+                return;
+            }
+
+            const data = {
+                calendars: state.calendars,
+                events: state.events,
+                templateFolders: state.templateFolders,
+                theme: state.theme,
+                lastSynced: new Date().toISOString()
+            };
+
+            try {
+                updateSyncStatus('アップロード中...');
+
+                if (binId) {
+                    // Update existing bin
+                    const res = await fetch(`${JSONBIN_API_URL}/b/${binId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': apiKey
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    updateSyncStatus('アップロード完了 ' + new Date().toLocaleTimeString());
+                    if (!silent) alert('クラウドにアップロードしました');
+                } else {
+                    // Create new bin
+                    const res = await fetch(`${JSONBIN_API_URL}/b`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Master-Key': apiKey,
+                            'X-Bin-Name': 'Ultimate Calendar Data'
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const result = await res.json();
+                    state.syncSettings.binId = result.metadata.id;
+                    saveData();
+                    updateSyncStatus('新規Bin作成完了');
+                    alert(`新しいBinを作成しました。\nBin ID: ${result.metadata.id}\n他のデバイスで同期するにはこのIDを使用してください。`);
+                }
+            } catch (err) {
+                console.error('Sync upload error:', err);
+                updateSyncStatus('アップロード失敗');
+                if (!silent) alert('アップロードに失敗しました: ' + err.message);
+            }
+        }
+
+        async function syncDownload() {
+            const { apiKey, binId } = state.syncSettings;
+
+            if (!apiKey) {
+                alert('マスターキーが設定されていません。同期設定を開いてください。');
+                return;
+            }
+
+            if (!binId) {
+                alert('Bin IDが設定されていません。同期設定を開いてIDを入力してください。');
+                return;
+            }
+
+            try {
+                updateSyncStatus('ダウンロード中...');
+
+                const res = await fetch(`${JSONBIN_API_URL}/b/${binId}/latest`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Master-Key': apiKey
+                    }
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const result = await res.json();
+                const data = result.record;
+
+                if (data) {
+                    if (Array.isArray(data.calendars)) state.calendars = data.calendars;
+                    if (Array.isArray(data.events)) state.events = data.events;
+                    if (Array.isArray(data.templateFolders)) state.templateFolders = data.templateFolders;
+                    if (data.theme) {
+                        state.theme = data.theme;
+                        document.body.setAttribute('data-theme', state.theme === 'light' ? 'light' : '');
+                        document.getElementById('themeBtn').textContent = state.theme === 'light' ? '☀️' : '🌙';
+                    }
+
+                    saveData();
+                    renderAll();
+                    updateSyncStatus('ダウンロード完了 ' + new Date().toLocaleTimeString());
+                    alert('クラウドからデータを取得しました');
+                }
+            } catch (err) {
+                console.error('Sync download error:', err);
+                updateSyncStatus('ダウンロード失敗');
+                alert('ダウンロードに失敗しました: ' + err.message);
+            }
         }
 
         function navigate(delta) {
