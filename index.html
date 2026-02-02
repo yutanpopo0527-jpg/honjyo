@@ -1045,13 +1045,20 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">繰り返し</label>
-                    <select class="form-select" id="eventRecurrence">
-                        <option value="">なし</option>
-                        <option value="daily">毎日</option>
-                        <option value="weekly">毎週</option>
-                        <option value="monthly">毎月</option>
-                        <option value="yearly">毎年</option>
-                    </select>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <select class="form-select" id="eventRecurrence" style="flex:1;">
+                            <option value="">なし</option>
+                            <option value="daily">毎日</option>
+                            <option value="weekly">毎週</option>
+                            <option value="monthly">毎月</option>
+                            <option value="yearly">毎年</option>
+                            <option value="custom">カスタム</option>
+                        </select>
+                        <button type="button" class="btn" id="customRecurrenceBtn"
+                            style="display:none;padding:6px 12px;">設定</button>
+                    </div>
+                    <div id="customRecurrenceDisplay"
+                        style="display:none;font-size:0.85rem;color:var(--text-muted);margin-top:4px;"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">色</label>
@@ -1180,6 +1187,55 @@
         </div>
     </div>
 
+    <!-- Custom Recurrence Modal -->
+    <div class="modal-overlay" id="customRecurrenceModal">
+        <div class="modal" style="max-width: 360px;">
+            <div class="modal-header">
+                <span class="modal-title">🔄 カスタム</span>
+                <button class="modal-close" id="closeCustomRecurrenceModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">繰り返し間隔</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="number" class="form-input" id="customRecurrenceInterval" min="1" max="99" value="1"
+                            style="width:80px;">
+                        <select class="form-select" id="customRecurrenceUnit" style="flex:1;">
+                            <option value="day">日ごと</option>
+                            <option value="week">週ごと</option>
+                            <option value="month">ヶ月ごと</option>
+                            <option value="year">年ごと</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">終了日</label>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="radio" name="customRecurrenceEnd" value="none" checked>
+                            <span>なし</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="radio" name="customRecurrenceEnd" value="date">
+                            <span>指定日:</span>
+                            <input type="date" class="form-input" id="customRecurrenceEndDate" style="flex:1;" disabled>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="radio" name="customRecurrenceEnd" value="count">
+                            <span>回数:</span>
+                            <input type="number" class="form-input" id="customRecurrenceCount" min="1" max="100"
+                                value="1" style="width:80px;" disabled>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn" id="cancelCustomRecurrenceBtn">キャンセル</button>
+                <button class="btn btn-primary" id="saveCustomRecurrenceBtn">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const COLORS = ['#4285f4', '#0f9d58', '#f4b400', '#db4437', '#673ab7', '#e91e63', '#00bcd4', '#ff5722', '#795548', '#607d8b'];
         const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
@@ -1250,7 +1306,9 @@
                 apiKey: '',
                 binId: '',
                 autoSync: false
-            }
+            },
+            // Temporary custom recurrence settings for event modal
+            tempCustomRecurrence: null
         };
 
         // Initialize
@@ -1536,6 +1594,70 @@
                                 return yearsDiff >= 0 && yearsDiff <= 5; // Limit to 5 years
                             }
                             return false;
+                        }
+                        case 'custom': {
+                            if (!e.customRecurrence) return false;
+                            const { interval, unit, endType, endDate, count } = e.customRecurrence;
+
+                            let matches = false;
+                            let occurrenceCount = 0;
+
+                            switch (unit) {
+                                case 'day': {
+                                    const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+                                    if (daysDiff >= 0 && daysDiff % interval === 0) {
+                                        occurrenceCount = Math.floor(daysDiff / interval) + 1;
+                                        matches = true;
+                                    }
+                                    break;
+                                }
+                                case 'week': {
+                                    if (targetDate.getDay() === startDate.getDay()) {
+                                        const weeksDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24 * 7));
+                                        if (weeksDiff >= 0 && weeksDiff % interval === 0) {
+                                            occurrenceCount = Math.floor(weeksDiff / interval) + 1;
+                                            matches = true;
+                                        }
+                                    }
+                                    break;
+                                }
+                                case 'month': {
+                                    if (targetDate.getDate() === startDate.getDate()) {
+                                        const monthsDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 +
+                                            (targetDate.getMonth() - startDate.getMonth());
+                                        if (monthsDiff >= 0 && monthsDiff % interval === 0) {
+                                            occurrenceCount = Math.floor(monthsDiff / interval) + 1;
+                                            matches = true;
+                                        }
+                                    }
+                                    break;
+                                }
+                                case 'year': {
+                                    if (targetDate.getMonth() === startDate.getMonth() &&
+                                        targetDate.getDate() === startDate.getDate()) {
+                                        const yearsDiff = targetDate.getFullYear() - startDate.getFullYear();
+                                        if (yearsDiff >= 0 && yearsDiff % interval === 0) {
+                                            occurrenceCount = Math.floor(yearsDiff / interval) + 1;
+                                            matches = true;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+
+                            if (!matches) return false;
+
+                            // Check end conditions
+                            if (endType === 'date' && endDate) {
+                                return dateStr <= endDate;
+                            } else if (endType === 'count' && count) {
+                                return occurrenceCount <= count;
+                            }
+
+                            // Default: limit to 2 years for 'none' end type
+                            const maxDays = 365 * 2;
+                            const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+                            return daysDiff <= maxDays;
                         }
                     }
                 }
@@ -2019,6 +2141,17 @@
                 calendarEl.value = event.calendarId;
                 recurrenceEl.value = event.recurrence || '';
 
+                // Load custom recurrence settings
+                if (event.recurrence === 'custom' && event.customRecurrence) {
+                    state.tempCustomRecurrence = { ...event.customRecurrence };
+                    document.getElementById('customRecurrenceBtn').style.display = 'block';
+                    updateCustomRecurrenceDisplay();
+                } else {
+                    state.tempCustomRecurrence = null;
+                    document.getElementById('customRecurrenceBtn').style.display = event.recurrence === 'custom' ? 'block' : 'none';
+                    document.getElementById('customRecurrenceDisplay').style.display = 'none';
+                }
+
                 const color = event.color || state.calendars.find(c => c.id === event.calendarId)?.color || '#4285f4';
                 document.querySelectorAll('.color-opt').forEach(el => {
                     el.classList.toggle('selected', el.dataset.color === color);
@@ -2036,6 +2169,11 @@
                 endTimeEl.value = time ? addMinutes(time, 60) : '10:00';
                 calendarEl.value = state.calendars[0]?.id || '';
                 recurrenceEl.value = '';
+
+                // Reset custom recurrence
+                state.tempCustomRecurrence = null;
+                document.getElementById('customRecurrenceBtn').style.display = 'none';
+                document.getElementById('customRecurrenceDisplay').style.display = 'none';
 
                 document.querySelectorAll('.color-opt').forEach((el, i) => {
                     el.classList.toggle('selected', i === 0);
@@ -2071,6 +2209,7 @@
             const endDate = document.getElementById('eventEndDate').value;
             const endTime = document.getElementById('eventEndTime').value;
             const selectedColor = document.querySelector('.color-opt.selected')?.dataset.color || '#4285f4';
+            const recurrence = document.getElementById('eventRecurrence').value || null;
 
             const event = {
                 id: state.editingEventId || uuid(),
@@ -2080,9 +2219,16 @@
                 start: allDay ? startDate : `${startDate}T${startTime}:00`,
                 end: allDay ? endDate : `${endDate}T${endTime}:00`,
                 calendarId: document.getElementById('eventCalendar').value,
-                recurrence: document.getElementById('eventRecurrence').value || null,
+                recurrence,
                 color: selectedColor
             };
+
+            // Add custom recurrence settings if applicable
+            if (recurrence === 'custom' && state.tempCustomRecurrence) {
+                event.customRecurrence = { ...state.tempCustomRecurrence };
+            } else {
+                event.customRecurrence = null;
+            }
 
             if (state.editingEventId) {
                 const idx = state.events.findIndex(e => e.id === state.editingEventId);
@@ -2091,6 +2237,7 @@
                 state.events.push(event);
             }
 
+            state.tempCustomRecurrence = null;
             saveData();
             closeEventModal();
             renderAll();
@@ -2833,7 +2980,36 @@
             document.getElementById('syncUploadBtn').addEventListener('click', () => syncUpload(false));
             document.getElementById('syncDownloadBtn').addEventListener('click', syncDownload);
 
+            // Custom recurrence
+            document.getElementById('eventRecurrence').addEventListener('change', e => {
+                const customBtn = document.getElementById('customRecurrenceBtn');
+                const customDisplay = document.getElementById('customRecurrenceDisplay');
+                if (e.target.value === 'custom') {
+                    customBtn.style.display = 'block';
+                    if (state.tempCustomRecurrence) {
+                        updateCustomRecurrenceDisplay();
+                    } else {
+                        customDisplay.style.display = 'none';
+                    }
+                } else {
+                    customBtn.style.display = 'none';
+                    customDisplay.style.display = 'none';
+                    state.tempCustomRecurrence = null;
+                }
+            });
 
+            document.getElementById('customRecurrenceBtn').addEventListener('click', openCustomRecurrenceModal);
+            document.getElementById('closeCustomRecurrenceModal').addEventListener('click', closeCustomRecurrenceModal);
+            document.getElementById('cancelCustomRecurrenceBtn').addEventListener('click', closeCustomRecurrenceModal);
+            document.getElementById('saveCustomRecurrenceBtn').addEventListener('click', saveCustomRecurrence);
+
+            // Custom recurrence end type radio buttons
+            document.querySelectorAll('input[name="customRecurrenceEnd"]').forEach(radio => {
+                radio.addEventListener('change', e => {
+                    document.getElementById('customRecurrenceEndDate').disabled = e.target.value !== 'date';
+                    document.getElementById('customRecurrenceCount').disabled = e.target.value !== 'count';
+                });
+            });
 
             // Close modals on overlay click
             document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -2841,6 +3017,94 @@
                     if (e.target === overlay) overlay.classList.remove('show');
                 });
             });
+        }
+
+        // Custom Recurrence Functions
+        function openCustomRecurrenceModal() {
+            const modal = document.getElementById('customRecurrenceModal');
+            const startDate = document.getElementById('eventStartDate').value;
+
+            // Set default end date to 1 month from start
+            if (startDate) {
+                const defaultEndDate = new Date(startDate);
+                defaultEndDate.setMonth(defaultEndDate.getMonth() + 1);
+                document.getElementById('customRecurrenceEndDate').value = formatDate(defaultEndDate);
+            }
+
+            // Load existing custom recurrence if available
+            if (state.tempCustomRecurrence) {
+                document.getElementById('customRecurrenceInterval').value = state.tempCustomRecurrence.interval || 1;
+                document.getElementById('customRecurrenceUnit').value = state.tempCustomRecurrence.unit || 'day';
+
+                const endType = state.tempCustomRecurrence.endType || 'none';
+                document.querySelector(`input[name="customRecurrenceEnd"][value="${endType}"]`).checked = true;
+
+                document.getElementById('customRecurrenceEndDate').disabled = endType !== 'date';
+                document.getElementById('customRecurrenceCount').disabled = endType !== 'count';
+
+                if (state.tempCustomRecurrence.endDate) {
+                    document.getElementById('customRecurrenceEndDate').value = state.tempCustomRecurrence.endDate;
+                }
+                if (state.tempCustomRecurrence.count) {
+                    document.getElementById('customRecurrenceCount').value = state.tempCustomRecurrence.count;
+                }
+            } else {
+                // Reset to defaults
+                document.getElementById('customRecurrenceInterval').value = 1;
+                document.getElementById('customRecurrenceUnit').value = 'day';
+                document.querySelector('input[name="customRecurrenceEnd"][value="none"]').checked = true;
+                document.getElementById('customRecurrenceEndDate').disabled = true;
+                document.getElementById('customRecurrenceCount').disabled = true;
+                document.getElementById('customRecurrenceCount').value = 1;
+            }
+
+            modal.classList.add('show');
+        }
+
+        function closeCustomRecurrenceModal() {
+            document.getElementById('customRecurrenceModal').classList.remove('show');
+        }
+
+        function saveCustomRecurrence() {
+            const interval = parseInt(document.getElementById('customRecurrenceInterval').value) || 1;
+            const unit = document.getElementById('customRecurrenceUnit').value;
+            const endType = document.querySelector('input[name="customRecurrenceEnd"]:checked').value;
+
+            state.tempCustomRecurrence = {
+                interval: Math.min(99, Math.max(1, interval)),
+                unit,
+                endType
+            };
+
+            if (endType === 'date') {
+                state.tempCustomRecurrence.endDate = document.getElementById('customRecurrenceEndDate').value;
+            } else if (endType === 'count') {
+                const count = parseInt(document.getElementById('customRecurrenceCount').value) || 1;
+                state.tempCustomRecurrence.count = Math.min(100, Math.max(1, count));
+            }
+
+            updateCustomRecurrenceDisplay();
+            closeCustomRecurrenceModal();
+        }
+
+        function updateCustomRecurrenceDisplay() {
+            const display = document.getElementById('customRecurrenceDisplay');
+            if (!state.tempCustomRecurrence) {
+                display.style.display = 'none';
+                return;
+            }
+
+            const unitLabels = { day: '日', week: '週', month: 'ヶ月', year: '年' };
+            let text = `${state.tempCustomRecurrence.interval}${unitLabels[state.tempCustomRecurrence.unit]}ごと`;
+
+            if (state.tempCustomRecurrence.endType === 'date' && state.tempCustomRecurrence.endDate) {
+                text += ` (${state.tempCustomRecurrence.endDate}まで)`;
+            } else if (state.tempCustomRecurrence.endType === 'count' && state.tempCustomRecurrence.count) {
+                text += ` (${state.tempCustomRecurrence.count}回)`;
+            }
+
+            display.textContent = text;
+            display.style.display = 'block';
         }
 
         // ICS Export
