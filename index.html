@@ -1487,11 +1487,60 @@
         }
 
         function getEventsForDate(dateStr) {
+            const targetDate = new Date(dateStr);
+
             return state.events.filter(e => {
                 if (!state.calendars.find(c => c.id === e.calendarId && c.visible)) return false;
-                const start = e.start.split('T')[0];
-                const end = e.end.split('T')[0];
-                return dateStr >= start && dateStr <= end;
+
+                const eventStartDate = e.start.split('T')[0];
+                const eventEndDate = e.end.split('T')[0];
+
+                // Check if it's the original event date range
+                if (dateStr >= eventStartDate && dateStr <= eventEndDate) {
+                    return true;
+                }
+
+                // Check recurrence
+                if (e.recurrence && dateStr >= eventStartDate) {
+                    const startDate = new Date(eventStartDate);
+                    const eventDuration = Math.floor((new Date(eventEndDate) - startDate) / (1000 * 60 * 60 * 24));
+
+                    switch (e.recurrence) {
+                        case 'daily': {
+                            // Every day after start date
+                            const daysDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24));
+                            return daysDiff >= 0 && daysDiff <= eventDuration + 365; // Limit to 1 year
+                        }
+                        case 'weekly': {
+                            // Same day of week
+                            if (targetDate.getDay() === startDate.getDay()) {
+                                const weeksDiff = Math.floor((targetDate - startDate) / (1000 * 60 * 60 * 24 * 7));
+                                return weeksDiff >= 0 && weeksDiff <= 52; // Limit to 1 year
+                            }
+                            return false;
+                        }
+                        case 'monthly': {
+                            // Same day of month
+                            if (targetDate.getDate() === startDate.getDate()) {
+                                const monthsDiff = (targetDate.getFullYear() - startDate.getFullYear()) * 12 +
+                                    (targetDate.getMonth() - startDate.getMonth());
+                                return monthsDiff >= 0 && monthsDiff <= 12; // Limit to 1 year
+                            }
+                            return false;
+                        }
+                        case 'yearly': {
+                            // Same month and day
+                            if (targetDate.getMonth() === startDate.getMonth() &&
+                                targetDate.getDate() === startDate.getDate()) {
+                                const yearsDiff = targetDate.getFullYear() - startDate.getFullYear();
+                                return yearsDiff >= 0 && yearsDiff <= 5; // Limit to 5 years
+                            }
+                            return false;
+                        }
+                    }
+                }
+
+                return false;
             });
         }
 
