@@ -857,9 +857,12 @@
             }
 
             .header-date {
-                display: block;
-                font-size: 0.9rem;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                font-size: 0.75rem;
                 font-weight: 500;
+                line-height: 1.2;
             }
 
             .logo {
@@ -1387,7 +1390,7 @@
         function updateHeaderDate() {
             const d = state.currentDate;
             const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-            document.getElementById('headerDate').textContent = `${d.getFullYear()}年 ${months[d.getMonth()]}`;
+            document.getElementById('headerDate').innerHTML = `<span class="header-year">${d.getFullYear()}年</span><span class="header-month">${months[d.getMonth()]}</span>`;
         }
 
 
