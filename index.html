@@ -857,21 +857,23 @@
             }
 
             .header-date {
-                display: none;
+                display: block;
+                font-size: 0.9rem;
+                font-weight: 500;
             }
 
             .logo {
-                font-size: 0.9rem;
+                display: none;
             }
 
             header {
-                gap: 8px;
+                gap: 6px;
                 padding: 0 8px;
             }
 
             .nav-btn {
-                padding: 6px 10px;
-                font-size: 0.85rem;
+                padding: 6px 8px;
+                font-size: 0.8rem;
             }
 
             /* Smaller sidebar text on mobile */
@@ -2791,9 +2793,85 @@
 
         // ICS Export
         function exportIcs() {
+            // Show calendar selection dialog
+            const dialog = document.createElement('div');
+            dialog.id = 'icsExportDialog';
+            dialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            dialog.innerHTML = `
+                <div style="background: var(--bg-surface); padding: 24px; border-radius: 12px; min-width: 320px; max-width: 90%;">
+                    <div style="margin-bottom: 16px; font-size: 1.1rem; font-weight: 500;">ICSエクスポート</div>
+                    <div style="margin-bottom: 12px; color: var(--text-muted);">エクスポートするカレンダーを選択してください</div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--glass); border-radius: var(--radius-sm); margin-bottom: 8px; cursor: pointer;">
+                            <input type="checkbox" id="icsExportAll" checked>
+                            <span style="font-weight: 500;">すべてのカレンダー</span>
+                        </label>
+                        <div id="icsExportCalendarList" style="max-height: 200px; overflow-y: auto;">
+                            ${state.calendars.map(cal => `
+                                <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer;">
+                                    <input type="checkbox" class="ics-export-cal" value="${cal.id}" checked disabled>
+                                    <span class="cal-dot" style="background:${cal.color};width:12px;height:12px;border-radius:50%;"></span>
+                                    <span>${cal.name}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button id="icsExportCancelBtn" class="btn" style="padding: 10px 20px;">キャンセル</button>
+                        <button id="icsExportConfirmBtn" class="btn btn-primary" style="padding: 10px 20px;">エクスポート</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+
+            const allCheckbox = dialog.querySelector('#icsExportAll');
+            const calCheckboxes = dialog.querySelectorAll('.ics-export-cal');
+
+            allCheckbox.addEventListener('change', () => {
+                calCheckboxes.forEach(cb => {
+                    cb.disabled = allCheckbox.checked;
+                    cb.checked = allCheckbox.checked;
+                });
+            });
+
+            dialog.querySelector('#icsExportConfirmBtn').addEventListener('click', () => {
+                const selectedCalendarIds = allCheckbox.checked
+                    ? state.calendars.map(c => c.id)
+                    : Array.from(calCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+                if (selectedCalendarIds.length === 0) {
+                    alert('少なくとも1つのカレンダーを選択してください');
+                    return;
+                }
+
+                performIcsExport(selectedCalendarIds);
+                dialog.remove();
+            });
+
+            dialog.querySelector('#icsExportCancelBtn').addEventListener('click', () => {
+                dialog.remove();
+            });
+
+            dialog.addEventListener('click', e => {
+                if (e.target === dialog) dialog.remove();
+            });
+        }
+
+        function performIcsExport(calendarIds) {
             let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Ultimate Calendar//EN\r\n';
 
-            state.events.forEach(e => {
+            state.events.filter(e => calendarIds.includes(e.calendarId)).forEach(e => {
                 const uid = e.id + '@ultimate-calendar';
                 const dtstart = e.allDay ? e.start.replace(/-/g, '') : e.start.replace(/[-:]/g, '').replace('T', 'T');
                 const dtend = e.allDay ? e.end.replace(/-/g, '') : e.end.replace(/[-:]/g, '').replace('T', 'T');
