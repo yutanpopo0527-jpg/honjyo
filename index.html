@@ -829,7 +829,7 @@
                 top: 60px;
                 bottom: 0;
                 width: 280px;
-                z-index: 99;
+                z-index: 200;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
                 padding-bottom: 100px;
@@ -2507,17 +2507,25 @@
 
         function renderTemplateManagerList() {
             const container = document.getElementById('templateManagerList');
-            container.innerHTML = state.templateFolders.map(folder => `
-    <div class="folder-item open" style="margin-bottom:12px;">
+            container.innerHTML = state.templateFolders.map((folder, folderIdx) => `
+    <div class="folder-item open" style="margin-bottom:12px;" data-folder-id="${folder.id}">
       <div class="folder-header" style="background:var(--glass);">
         <span>📁 ${folder.name}</span>
         <button class="btn btn-danger" style="margin-left:auto;padding:4px 8px;font-size:0.75rem;" onclick="deleteFolder('${folder.id}')">削除</button>
       </div>
       <div class="folder-templates" style="display:block;">
-        ${folder.templates.map(t => `
-          <div class="template-item" style="justify-content:space-between;">
-            <span><span class="color-dot" style="background:${t.color};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;"></span>${t.title}</span>
-            <button class="btn btn-danger" style="padding:2px 6px;font-size:0.7rem;" onclick="deleteTemplate('${folder.id}','${t.id}')">×</button>
+        ${folder.templates.map((t, idx) => `
+          <div class="template-item" style="justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <span style="flex:1;min-width:100px;"><span class="color-dot" style="background:${t.color};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;"></span>${t.title}</span>
+            <div style="display:flex;gap:4px;align-items:center;">
+              <button class="btn" style="padding:2px 6px;font-size:0.7rem;" onclick="moveTemplateUp('${folder.id}','${t.id}')" ${idx === 0 ? 'disabled' : ''}>↑</button>
+              <button class="btn" style="padding:2px 6px;font-size:0.7rem;" onclick="moveTemplateDown('${folder.id}','${t.id}')" ${idx === folder.templates.length - 1 ? 'disabled' : ''}>↓</button>
+              <select class="form-select" style="padding:2px 4px;font-size:0.7rem;min-width:80px;" onchange="moveTemplateToFolder('${folder.id}','${t.id}',this.value)">
+                <option value="">移動...</option>
+                ${state.templateFolders.filter(f => f.id !== folder.id).map(f => `<option value="${f.id}">${f.name}</option>`).join('')}
+              </select>
+              <button class="btn btn-danger" style="padding:2px 6px;font-size:0.7rem;" onclick="deleteTemplate('${folder.id}','${t.id}')">×</button>
+            </div>
           </div>
         `).join('') || '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px;">テンプレートなし</div>'}
       </div>
@@ -2552,6 +2560,46 @@
                 renderTemplateManagerList();
                 renderTemplateFolders();
             }
+        }
+
+        function moveTemplateUp(folderId, templateId) {
+            const folder = state.templateFolders.find(f => f.id === folderId);
+            if (!folder) return;
+            const idx = folder.templates.findIndex(t => t.id === templateId);
+            if (idx > 0) {
+                [folder.templates[idx - 1], folder.templates[idx]] = [folder.templates[idx], folder.templates[idx - 1]];
+                saveData();
+                renderTemplateManagerList();
+                renderTemplateFolders();
+            }
+        }
+
+        function moveTemplateDown(folderId, templateId) {
+            const folder = state.templateFolders.find(f => f.id === folderId);
+            if (!folder) return;
+            const idx = folder.templates.findIndex(t => t.id === templateId);
+            if (idx >= 0 && idx < folder.templates.length - 1) {
+                [folder.templates[idx], folder.templates[idx + 1]] = [folder.templates[idx + 1], folder.templates[idx]];
+                saveData();
+                renderTemplateManagerList();
+                renderTemplateFolders();
+            }
+        }
+
+        function moveTemplateToFolder(fromFolderId, templateId, toFolderId) {
+            if (!toFolderId) return;
+            const fromFolder = state.templateFolders.find(f => f.id === fromFolderId);
+            const toFolder = state.templateFolders.find(f => f.id === toFolderId);
+            if (!fromFolder || !toFolder) return;
+
+            const templateIdx = fromFolder.templates.findIndex(t => t.id === templateId);
+            if (templateIdx === -1) return;
+
+            const [template] = fromFolder.templates.splice(templateIdx, 1);
+            toFolder.templates.push(template);
+            saveData();
+            renderTemplateManagerList();
+            renderTemplateFolders();
         }
 
         // Calendar Management
