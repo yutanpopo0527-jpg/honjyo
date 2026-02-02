@@ -2928,6 +2928,11 @@
             document.getElementById('saveAsTemplate').addEventListener('click', saveAsTemplate);
             document.getElementById('eventAllDay').addEventListener('change', e => toggleTimeInputs(!e.target.checked));
 
+            // Auto-set end time when start time changes
+            document.getElementById('eventStartTime').addEventListener('change', e => {
+                document.getElementById('eventEndTime').value = addMinutes(e.target.value, 60);
+            });
+
             // Auto-select calendar color when calendar is changed
             document.getElementById('eventCalendar').addEventListener('change', e => {
                 const cal = state.calendars.find(c => c.id === e.target.value);
@@ -3270,15 +3275,28 @@
                 const calendarId = dialog.querySelector('#icsImportCalendarSelect').value;
                 const calendar = state.calendars.find(c => c.id === calendarId);
                 const calendarColor = calendar ? calendar.color : '#4285f4';
-                events.forEach(ev => {
+
+                // Get existing event titles
+                const existingTitles = new Set(state.events.map(e => e.title));
+
+                // Filter out events with duplicate titles
+                const newEvents = events.filter(ev => !existingTitles.has(ev.title));
+                const skippedCount = events.length - newEvents.length;
+
+                newEvents.forEach(ev => {
                     ev.calendarId = calendarId;
                     ev.color = calendarColor;
                 });
-                state.events.push(...events);
+                state.events.push(...newEvents);
                 saveData();
                 renderAll();
                 dialog.remove();
-                alert(`${events.length}件の予定を「${calendar ? calendar.name : 'カレンダー'}」にインポートしました`);
+
+                let message = `${newEvents.length}件の予定を「${calendar ? calendar.name : 'カレンダー'}」にインポートしました`;
+                if (skippedCount > 0) {
+                    message += `\n（${skippedCount}件は既存のタイトルと重複のため除外されました）`;
+                }
+                alert(message);
             });
 
             dialog.querySelector('#icsImportCancelBtn').addEventListener('click', () => {
