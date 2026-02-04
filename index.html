@@ -1974,6 +1974,20 @@
                 return !(e.allDay && startDate !== endDate);
             });
 
+            // Check if there are any multi-day events covering this date (need spacer)
+            const multiDayEventsOnDate = state.events.filter(e => {
+                if (!e.allDay) return false;
+                if (!state.calendars.find(c => c.id === e.calendarId && c.visible)) return false;
+                const startDate = e.start.split('T')[0];
+                const endDate = e.end.split('T')[0];
+                return startDate !== endDate && dateStr >= startDate && dateStr <= endDate;
+            });
+
+            // Add spacer for each multi-day event that covers this date
+            if (multiDayEventsOnDate.length > 0) {
+                eventsHtml += `<div style="height:${multiDayEventsOnDate.length * 22}px;"></div>`;
+            }
+
             // Sort: All-day first, then time
             singleDayEvents.sort((a, b) => {
                 if (a.allDay && !b.allDay) return -1;
