@@ -1237,7 +1237,7 @@
     </div>
 
     <script>
-        const COLORS = ['#4285f4', '#0f9d58', '#f4b400', '#db4437', '#673ab7', '#e91e63', '#00bcd4', '#ff5722', '#795548', '#607d8b'];
+        const COLORS = ['#50C878', '#00CED1', '#00BFFF', '#C4A77A', '#2C3E50', '#FF0800', '#F64A8A', '#F88379', '#FF8C00', '#9B59B6'];
         const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
         // Generate time options with 5-minute intervals
@@ -1818,7 +1818,10 @@
                     e.stopPropagation();
                     const id = el.dataset.id;
                     const event = state.events.find(ev => ev.id === id || ev.id === el.dataset.originalId);
-                    if (event) openEventModal(event.id);
+                    if (event) {
+                        const eventDate = event.start.split('T')[0];
+                        openDailyView(eventDate);
+                    }
                 });
 
                 el.addEventListener('dragstart', e => {
