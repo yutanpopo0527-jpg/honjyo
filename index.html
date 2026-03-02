@@ -3293,11 +3293,11 @@
                 const calendar = state.calendars.find(c => c.id === calendarId);
                 const calendarColor = calendar ? calendar.color : '#4285f4';
 
-                // Get existing event titles
-                const existingTitles = new Set(state.events.map(e => e.title));
+                // Get existing event title+date combinations
+                const existingKeys = new Set(state.events.map(e => e.title + '|' + (e.start || '').substring(0, 10)));
 
-                // Filter out events with duplicate titles
-                const newEvents = events.filter(ev => !existingTitles.has(ev.title));
+                // Filter out events with duplicate title+date
+                const newEvents = events.filter(ev => !existingKeys.has(ev.title + '|' + (ev.start || '').substring(0, 10)));
                 const skippedCount = events.length - newEvents.length;
 
                 newEvents.forEach(ev => {
@@ -3311,7 +3311,7 @@
 
                 let message = `${newEvents.length}件の予定を「${calendar ? calendar.name : 'カレンダー'}」にインポートしました`;
                 if (skippedCount > 0) {
-                    message += `\n（${skippedCount}件は既存のタイトルと重複のため除外されました）`;
+                    message += `\n（${skippedCount}件は既存のタイトルと日付が重複のため除外されました）`;
                 }
                 alert(message);
             });
