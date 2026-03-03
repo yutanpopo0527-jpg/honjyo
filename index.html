@@ -401,11 +401,12 @@
         .multi-day-bar {
             position: absolute;
             height: 16px;
+            line-height: 16px;
             border-radius: 3px;
             font-size: 0.75rem;
             font-weight: 500;
             color: #fff;
-            padding: 2px 6px;
+            padding: 0 6px;
             white-space: nowrap;
             overflow: hidden;
             cursor: pointer;
@@ -518,6 +519,9 @@
 
         .event-chip.all-day {
             font-weight: 500;
+            height: 16px;
+            line-height: 16px;
+            padding: 0 6px;
         }
 
         .event-chip.timed {
@@ -858,15 +862,17 @@
             }
 
             .event-chip.all-day {
-                padding: 1px 4px;
-                line-height: 1.2;
+                height: 14px;
+                line-height: 14px;
+                padding: 0 4px;
             }
 
             .multi-day-event,
             .multi-day-bar {
                 height: 14px;
+                line-height: 14px;
                 font-size: 0.65rem;
-                padding: 1px 4px;
+                padding: 0 4px;
             }
 
             .header-date {
@@ -3538,19 +3544,59 @@
                 return;
             }
 
-            const data = {
-                calendars: state.calendars,
-                events: state.events,
-                templateFolders: state.templateFolders,
-                theme: state.theme,
-                lastSynced: new Date().toISOString()
-            };
-
             try {
+                // Step 1: If bin exists, download latest cloud data first
+                if (binId) {
+                    updateSyncStatus('クラウドから取得中...');
+                    try {
+                        const dlRes = await fetch(`${JSONBIN_API_URL}/b/${binId}/latest`, {
+                            method: 'GET',
+                            headers: { 'X-Master-Key': apiKey }
+                        });
+                        if (dlRes.ok) {
+                            const dlResult = await dlRes.json();
+                            const cloudData = dlResult.record;
+                            if (cloudData) {
+                                const cloudLastSynced = cloudData.lastSynced || cloudData.lastSaved || '';
+                                const localData = localStorage.getItem('calendarData');
+                                let localLastSynced = '';
+                                if (localData) {
+                                    try {
+                                        const parsed = JSON.parse(localData);
+                                        localLastSynced = parsed.lastSaved || parsed.lastSynced || '';
+                                    } catch (e) { /* ignore */ }
+                                }
+                                // If cloud data is newer, merge it into local state first
+                                if (cloudLastSynced && localLastSynced && cloudLastSynced > localLastSynced) {
+                                    if (Array.isArray(cloudData.calendars)) state.calendars = cloudData.calendars;
+                                    if (Array.isArray(cloudData.events)) state.events = cloudData.events;
+                                    if (Array.isArray(cloudData.templateFolders)) state.templateFolders = cloudData.templateFolders;
+                                    if (cloudData.theme) {
+                                        state.theme = cloudData.theme;
+                                        document.body.setAttribute('data-theme', state.theme === 'light' ? 'light' : '');
+                                        document.getElementById('themeBtn').textContent = state.theme === 'light' ? '☀️' : '🌙';
+                                    }
+                                    renderAll();
+                                }
+                            }
+                        }
+                    } catch (dlErr) {
+                        console.warn('Pre-upload download failed, proceeding with upload:', dlErr);
+                    }
+                }
+
+                // Step 2: Upload current state
+                const data = {
+                    calendars: state.calendars,
+                    events: state.events,
+                    templateFolders: state.templateFolders,
+                    theme: state.theme,
+                    lastSynced: new Date().toISOString()
+                };
+
                 updateSyncStatus('アップロード中...');
 
                 if (binId) {
-                    // Update existing bin
                     const res = await fetch(`${JSONBIN_API_URL}/b/${binId}`, {
                         method: 'PUT',
                         headers: {
