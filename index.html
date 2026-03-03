@@ -402,10 +402,10 @@
             position: absolute;
             height: 16px;
             border-radius: 3px;
-            font-size: 0.65rem;
+            font-size: 0.75rem;
             font-weight: 500;
             color: #fff;
-            padding: 1px 5px;
+            padding: 2px 6px;
             white-space: nowrap;
             overflow: hidden;
             cursor: pointer;
@@ -518,9 +518,6 @@
 
         .event-chip.all-day {
             font-weight: 500;
-            font-size: 0.7rem;
-            padding: 1px 5px;
-            line-height: 1.3;
         }
 
         .event-chip.timed {
@@ -861,16 +858,15 @@
             }
 
             .event-chip.all-day {
-                font-size: 0.6rem;
-                padding: 0px 3px;
+                padding: 1px 4px;
                 line-height: 1.2;
             }
 
             .multi-day-event,
             .multi-day-bar {
                 height: 14px;
-                font-size: 0.55rem;
-                padding: 0px 4px;
+                font-size: 0.65rem;
+                padding: 1px 4px;
             }
 
             .header-date {
@@ -3326,11 +3322,11 @@
                 const calendar = state.calendars.find(c => c.id === calendarId);
                 const calendarColor = calendar ? calendar.color : '#4285f4';
 
-                // Get existing event title+date combinations
-                const existingKeys = new Set(state.events.map(e => e.title + '|' + (e.start || '').substring(0, 10)));
+                // Get existing event title+start combinations (full start string for precise matching)
+                const existingKeys = new Set(state.events.map(e => e.title + '|' + (e.start || '')));
 
-                // Filter out events with duplicate title+date
-                const newEvents = events.filter(ev => !existingKeys.has(ev.title + '|' + (ev.start || '').substring(0, 10)));
+                // Filter out events with duplicate title+start (same name on different months will be imported)
+                const newEvents = events.filter(ev => !existingKeys.has(ev.title + '|' + (ev.start || '')));
                 const skippedCount = events.length - newEvents.length;
 
                 newEvents.forEach(ev => {
