@@ -841,7 +841,7 @@
             }
 
             .month-grid-wrapper {
-                height: calc(100vh - 140px);
+                height: calc(100vh - 130px);
                 /* Adjust for mobile header/nav */
             }
 
@@ -853,7 +853,7 @@
             }
 
             .event-chip {
-                font-size: 0.65rem;
+                font-size: 0.55rem;
                 /* Smaller font for mobile */
                 padding: 1px 4px;
                 letter-spacing: -0.03em;
@@ -865,13 +865,14 @@
                 height: 14px;
                 line-height: 14px;
                 padding: 0 4px;
+                font-size: 0.55rem;
             }
 
             .multi-day-event,
             .multi-day-bar {
                 height: 14px;
                 line-height: 14px;
-                font-size: 0.65rem;
+                font-size: 0.55rem;
                 padding: 0 4px;
             }
 
@@ -1937,7 +1938,7 @@
                     const isLastSegment = barEndIdx === endIdx;
 
                     const left = barStartCol * cellWidth;
-                    const top = headerHeight + row * cellHeight + (isMobileView ? 24 : 28); // offset for day number
+                    const top = headerHeight + row * cellHeight + (isMobileView ? 20 : 24); // offset for day number area
                     const width = spanCols * cellWidth;
 
                     let borderRadius = '0';
