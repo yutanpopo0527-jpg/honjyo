@@ -1911,10 +1911,22 @@
                 let startIdx = gridDates.indexOf(startDate);
                 let endIdx = gridDates.indexOf(endDate);
 
-                // Clamp to grid boundaries
-                if (startIdx < 0) startIdx = 0;
-                if (endIdx < 0 || endIdx >= gridDates.length) endIdx = gridDates.length - 1;
-                if (startIdx > endIdx) return;
+                // イベントがグリッド範囲と重なるか判定
+                const gridStart = gridDates[0];
+                const gridEnd = gridDates[gridDates.length - 1];
+
+                // イベントがグリッド範囲外なら描画しない
+                if (endDate < gridStart || startDate > gridEnd) return;
+
+                // グリッド内にクランプ（部分的に重なる場合）
+                if (startIdx < 0) {
+                    // 開始日がグリッドより前 → グリッドの最初からバーを描画
+                    startIdx = 0;
+                }
+                if (endIdx < 0) {
+                    // 終了日がグリッドより後 → グリッドの最後までバーを描画
+                    endIdx = gridDates.length - 1;
+                }
 
                 // Calculate rows this event spans
                 const startRow = Math.floor(startIdx / 7);
