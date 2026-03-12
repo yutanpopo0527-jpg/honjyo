@@ -947,6 +947,70 @@
             background: var(--border);
             border-radius: 4px;
         }
+
+        /* Toast Notification */
+        .toast-container {
+            position: fixed;
+            top: 70px;
+            right: 16px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--primary);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            min-width: 280px;
+            max-width: 380px;
+            pointer-events: auto;
+            animation: toastIn 0.3s ease-out, toastOut 0.3s ease-in forwards;
+            animation-delay: 0s, 4.7s;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .toast-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .toast-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 2px;
+        }
+
+        .toast-message {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @keyframes toastIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes toastOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
     </style>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1308,6 +1372,8 @@
         let firestoreUnsubscribe = null;
         let isFirestoreUpdate = false; // Flag to prevent save loops
         const FIRESTORE_DOC_ID = 'default';
+        let previousEventIds = new Set(); // Track known event IDs for notification
+        let isInitialLoad = true; // Skip notification on first load
 
         const FIREBASE_CONFIG = {
             apiKey: "AIzaSyBjND4X2zaeBPIjyg3aRCJ_KcNURkTad5M",
@@ -1346,6 +1412,20 @@
                         const data = doc.data();
                         let changed = false;
 
+                        // Detect new events before updating state
+                        if (Array.isArray(data.events) && !isInitialLoad) {
+                            const incomingIds = new Set(data.events.map(e => e.id));
+                            const newEvents = data.events.filter(e => !previousEventIds.has(e.id));
+                            if (newEvents.length > 0) {
+                                newEvents.forEach(ev => {
+                                    const cal = (data.calendars || state.calendars).find(c => c.id === ev.calendarId);
+                                    const calName = cal ? cal.name : '';
+                                    const dateStr = ev.start ? ev.start.split('T')[0] : '';
+                                    showToast('📅 新しい予定', `${ev.title}${calName ? ' (' + calName + ')' : ''}${dateStr ? ' - ' + dateStr : ''}`, ev.color || (cal ? cal.color : '#4285f4'));
+                                });
+                            }
+                        }
+
                         if (Array.isArray(data.calendars)) { state.calendars = data.calendars; changed = true; }
                         if (Array.isArray(data.events)) { state.events = data.events; changed = true; }
                         if (Array.isArray(data.templateFolders)) { state.templateFolders = data.templateFolders; changed = true; }
@@ -1355,6 +1435,12 @@
                             document.getElementById('themeBtn').textContent = state.theme === 'light' ? '☀️' : '🌙';
                             changed = true;
                         }
+
+                        // Update tracked event IDs
+                        if (Array.isArray(data.events)) {
+                            previousEventIds = new Set(data.events.map(e => e.id));
+                        }
+                        isInitialLoad = false;
 
                         if (changed) {
                             // Save to localStorage as fallback (without triggering Firestore write)
@@ -1380,6 +1466,36 @@
                     console.error('Firestore listener error:', error);
                     updateSyncUI('同期エラー', '#dc3545');
                 });
+        }
+
+        // Toast notification
+        function showToast(title, message, accentColor) {
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            if (accentColor) {
+                toast.style.borderLeftColor = accentColor;
+            }
+            toast.innerHTML = `
+                <span class="toast-icon">🔔</span>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+            `;
+            container.appendChild(toast);
+
+            // Remove after animation completes (5s total)
+            setTimeout(() => {
+                if (toast.parentNode) toast.remove();
+            }, 5000);
         }
 
         // Initialize
