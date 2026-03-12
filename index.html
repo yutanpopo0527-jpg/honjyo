@@ -2918,12 +2918,15 @@
         function renderCalendarManagerList() {
             const container = document.getElementById('calendarManagerList');
             container.innerHTML = state.calendars.map(cal => `
-                <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--glass);border-radius:var(--radius-sm);margin-bottom:8px;">
-                    <div class="color-options" style="flex-shrink:0;">
+                <div style="padding:10px;background:var(--glass);border-radius:var(--radius-sm);margin-bottom:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <div class="cal-dot" style="background:${cal.color};width:14px;height:14px;border-radius:50%;flex-shrink:0;"></div>
+                        <input type="text" class="form-input" value="${cal.name}" data-cal-name="${cal.id}" style="flex:1;">
+                        <button class="btn btn-danger" style="padding:4px 8px;" onclick="deleteCalendar('${cal.id}')">削除</button>
+                    </div>
+                    <div class="color-options" style="gap:6px;">
                         ${COLORS.map(c => `<div class="color-opt ${c === cal.color ? 'selected' : ''}" data-color="${c}" data-cal-id="${cal.id}" style="background:${c};width:20px;height:20px;"></div>`).join('')}
                     </div>
-                    <input type="text" class="form-input" value="${cal.name}" data-cal-name="${cal.id}" style="flex:1;">
-                    <button class="btn btn-danger" style="padding:4px 8px;" onclick="deleteCalendar('${cal.id}')">削除</button>
                 </div>
             `).join('');
 
