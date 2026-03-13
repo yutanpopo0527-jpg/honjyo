@@ -2347,6 +2347,9 @@
             const deleteBtn = document.getElementById('deleteEventBtn');
 
             state.editingEventId = eventId;
+            // テンプレートからの編集ではないのでクリア
+            state.editingTemplateId = null;
+            state.editingTemplateFolderId = null;
 
             if (eventId) {
                 const event = state.events.find(e => e.id === eventId);
@@ -2827,9 +2830,7 @@
             const title = document.getElementById('eventTitle').value.trim();
             if (!title) { alert('タイトルを入力してください'); return; }
 
-            // Store template data temporarily
-            state.pendingTemplate = {
-                id: uuid(),
+            const templateData = {
                 title,
                 description: document.getElementById('eventDesc').value,
                 allDay: document.getElementById('eventAllDay').checked,
@@ -2839,7 +2840,49 @@
                 color: document.querySelector('.color-opt.selected')?.dataset.color || '#4285f4'
             };
 
-            // Show folder selection modal
+            // 既存テンプレートから開いた場合は上書き更新
+            if (state.editingTemplateId && state.editingTemplateFolderId) {
+                const folder = state.templateFolders.find(f => f.id === state.editingTemplateFolderId);
+                if (folder) {
+                    const tplIdx = folder.templates.findIndex(t => t.id === state.editingTemplateId);
+                    if (tplIdx !== -1) {
+                        const oldTemplate = folder.templates[tplIdx];
+                        const oldCalendarId = oldTemplate.calendarId;
+                        const newCalendarId = templateData.calendarId;
+
+                        // テンプレートを更新
+                        folder.templates[tplIdx] = { ...oldTemplate, ...templateData };
+
+                        // カレンダーが変更された場合、関連する既存予定も一括更新
+                        let updatedCount = 0;
+                        if (oldCalendarId !== newCalendarId) {
+                            state.events.forEach(event => {
+                                if (event.title === oldTemplate.title && event.calendarId === oldCalendarId) {
+                                    event.calendarId = newCalendarId;
+                                    event.color = templateData.color;
+                                    updatedCount++;
+                                }
+                            });
+                        }
+
+                        saveData();
+                        renderTemplateFolders();
+                        renderMainView();
+                        if (updatedCount > 0) {
+                            alert(`テンプレートを更新しました。\n関連する予定 ${updatedCount} 件のカレンダーも更新しました。`);
+                        } else {
+                            alert('テンプレートを更新しました');
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // 新規テンプレートとして保存（フォルダ選択）
+            state.pendingTemplate = {
+                id: uuid(),
+                ...templateData
+            };
             openFolderSelectModal();
         }
 
@@ -2874,6 +2917,10 @@
             if (!template) return;
 
             const today = formatDate(new Date());
+
+            // 編集元テンプレートを記録（テンプレートとして保存時に上書き更新するため）
+            state.editingTemplateId = templateId;
+            state.editingTemplateFolderId = folderId;
 
             // Open modal with template data
             const modal = document.getElementById('eventModal');
