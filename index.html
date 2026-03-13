@@ -1662,6 +1662,14 @@
 
         function renderTemplateFolders() {
             const container = document.getElementById('templateFolders');
+
+            // 再描画前に開いているフォルダのIDを記録
+            const openFolderIds = new Set();
+            container.querySelectorAll('.folder-item.open').forEach(el => {
+                const folderId = el.dataset.folderId;
+                if (folderId) openFolderIds.add(folderId);
+            });
+
             container.innerHTML = state.templateFolders.map(folder => `
     <div class="folder-item" data-folder-id="${folder.id}">
       <div class="folder-header">
@@ -1679,6 +1687,12 @@
       </div>
     </div>
   `).join('');
+
+            // 開いていたフォルダの状態を復元
+            openFolderIds.forEach(folderId => {
+                const folderEl = container.querySelector(`.folder-item[data-folder-id="${folderId}"]`);
+                if (folderEl) folderEl.classList.add('open');
+            });
 
             container.querySelectorAll('.folder-header').forEach(header => {
                 header.addEventListener('click', () => {
